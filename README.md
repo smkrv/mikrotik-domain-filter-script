@@ -128,7 +128,7 @@ https://example.net/domain-list3.txt
 
 **Example Contents:**
 ```
-https://raw.githubusercontent.com/example/repo/main/domains.txt
+https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/native.tiktok.txt
 https://example.com/additional-domains.txt
 ```
 
@@ -148,7 +148,7 @@ https://example.net/special-domain-list3.txt
 
 **Example Contents:**
 ```
-https://raw.githubusercontent.com/example/repo/main/special-domains.txt
+https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/doh.txt
 https://example.com/additional-special-domains.txt
 ```
 
@@ -168,8 +168,8 @@ https://example.net/domain-list3.txt
 
 **Example Contents:**
 ```
-https://raw.githubusercontent.com/example/repo/main/special-domains.txt
-https://example.com/additional-special-domains.txt
+https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/native.apple.txt
+https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/native.samsung.txt
 ```
 
 ## Summary
