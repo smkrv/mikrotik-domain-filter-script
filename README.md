@@ -431,7 +431,8 @@ If you want to say thanks financially, you can send a small token of appreciatio
 *Open-source is built by community passion!* 🚀
 
 ---
-
+<div align="center">
 Made with ❤️ for the Mikrotik Community
 
 [Report Bug](https://github.com/smkrv/mikrotik-domain-filter-script/issues) · [Request Feature](https://github.com/smkrv/mikrotik-domain-filter-script/issues)
+</div>
