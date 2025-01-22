@@ -506,7 +506,7 @@ While the scripts are identical in functionality, they are maintained as separat
 ## Script Workflow Diagram
 
 ```markdown
-### Main Process Flow
+◌ Main Process Flow
 
 [START]
    │
@@ -598,7 +598,7 @@ While the scripts are identical in functionality, they are maintained as separat
    ▼
 [END]
 
-## Error Handling Flow
+◌ Error Handling Flow
 
 [Error Detected]
    │
@@ -617,7 +617,7 @@ While the scripts are identical in functionality, they are maintained as separat
    ▼
 [Exit with Error]
 
-## Parallel Processing
+◌ Parallel Processing
 
 [DNS Checks]
    │
