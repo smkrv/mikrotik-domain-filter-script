@@ -57,7 +57,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 ## Public Suffix List
 
 - **Loading Public Suffix List**: The script downloads and updates the Public Suffix List if it’s outdated. This list is used to determine the type of domains (second-level, regional, etc.).
-- The script utilizes the Mozilla Public Suffix List[^¹](https://publicsuffix.org/) - a standardized database of domain suffix information that helps properly identify the registrable domain parts. 
+- The script utilizes the Mozilla Public Suffix List[^¹](https://publicsuffix.org/) - a standardized database of domain suffix information that helps properly identify the registrable domain parts.
 
 ## Domain Filtering and Classification
 
@@ -160,24 +160,24 @@ This file contains a list of domains that should be excluded from both the main 
 
 **Format:**
 ```
-example.com
-example.org
-example.net
+https://example.com/domain-list1.txt
+https://example.org/domain-list2.txt
+https://example.net/domain-list3.txt
 ```
 
 **Example Contents:**
 ```
-mikrotik.com
-wikipedia.org
+https://raw.githubusercontent.com/example/repo/main/special-domains.txt
+https://example.com/additional-special-domains.txt
 ```
 
 ## Summary
 
 - **`SOURCES_FILE`**: Contains URLs for downloading the main domain lists.
 - **`SOURCESSPECIAL_FILE`**: Contains URLs for downloading the special domain lists.
-- **`WHITELIST_FILE`**: Contains domains that should be excluded from both the main and special lists.
+- **`WHITELIST_FILE`**: Contains URLs for downloading domains that should be excluded from both the main and special lists.
 
-Each file should have one URL or domain per line, with no additional spaces or characters.
+**Each file should have one URL or domain per line, with no additional spaces or characters.**
 
 ## Detailed Description of Domain Processing in Downloaded Lists
 
