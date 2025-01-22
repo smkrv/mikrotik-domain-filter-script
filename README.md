@@ -367,13 +367,6 @@ youtube.co.uk
 
 ```
 .
-├── CODE_OF_CONDUCT.md
-├── LICENSE
-├── README.md
-├── STRUCTURE.md
-├── assets
-│   └── images
-│       └── logo@2x.png
 ├── dns-static-updater.rsc      # MikroTik RouterOS script for DNS Static records import
 ├── mikrotik-domain-filter-bash.sh    # Main domain filtering script
 ├── update_gist.sh             # Script for updating main list Gist
@@ -385,6 +378,7 @@ youtube.co.uk
 ### Prerequisites
 - Unix-like operating system
 - Bash shell
+- Sudo rights (might be required for setup)  
 - Required permissions to execute scripts
 - Sufficient disk space for logs and cache
 
@@ -397,8 +391,14 @@ youtube.co.uk
 
 2. **Prepare Scripts**
    ```bash
-   chmod +x mikrotik-domain-filter-bash.sh
-   chmod +x update_gist.sh        # If using Gist updates
+   # You might need sudo rights to change file permissions  
+   sudo chmod +x mikrotik-domain-filter-bash.sh  
+   sudo chmod +x update_gist.sh        # If using Gist updates  
+   sudo chmod +x update_gist_special.sh # If using special Gist updates  
+
+   # Or if you own the files:  
+   chmod +x mikrotik-domain-filter-bash.sh  
+   chmod +x update_gist.sh        # If using Gist updates  
    chmod +x update_gist_special.sh # If using special Gist updates
    ```
 
