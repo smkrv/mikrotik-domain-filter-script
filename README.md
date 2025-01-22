@@ -637,7 +637,7 @@ This workflow ensures reliable and efficient domain list processing while mainta
 
 ## ⚠️ Legal Disclaimer and Limitation of Liability  
 
-### ⚠️ Software Disclaimer  
+### ❗ Software Disclaimer  
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,   
 INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A   
