@@ -71,7 +71,7 @@ mkdir -p "$(dirname "$LOG_FILE")"
 # Clear old log
 : > "$LOG_FILE"
 
-# Check for required files
+# Check for required files 
 check_required_files() {
     local missing_files=()
 

@@ -30,7 +30,7 @@ RESPONSE=$(curl -s -X PATCH \
 if echo "$RESPONSE" | jq -e '.id' > /dev/null; then
     echo "✅ File fully replaced in Gist"
 else
-    echo "❌ Error updating Gist"
+    echo "❌ Error updating Gist!"
     echo "$RESPONSE"
     exit 1
 fi
