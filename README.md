@@ -1,6 +1,6 @@
 <div align="center">  
 
-  ![GitHub last commit](https://img.shields.io/github/last-commit/smkrv/mikrotik-domain-filter-script.svg?style=flat-square) [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by-nc-sa/4.0/) ![RouterOS](https://img.shields.io/badge/RouterOS-7.17-blue) ![RouterOS](https://img.shields.io/badge/RouterOS-6.17-blue) ![Status](https://img.shields.io/badge/Status-Production-green) ![English](https://img.shields.io/badge/en-English-blue?style=flat-square)
+  ![GitHub last commit](https://img.shields.io/github/last-commit/smkrv/mikrotik-domain-filter-script.svg?style=flat-square) [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by-nc-sa/4.0/) ![RouterOS](https://img.shields.io/badge/RouterOS-7.17-blue) ![RouterOS](https://img.shields.io/badge/RouterOS-6.17-blue) ![Status](https://img.shields.io/badge/Status-Production-green) ![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=for-the-badge&logo=Cloudflare&logoColor=white) ![English](https://img.shields.io/badge/en-English-blue?style=flat-square)
 
 
   <img src="/assets/images/logo@2x.png" alt="HA Text AI" style="width: 50%; max-width: 256px; max-height: 128px; aspect-ratio: 2/1; object-fit: contain;"/>
@@ -38,10 +38,18 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 - **Domain Classification**: Domains are classified into second-level, regional, and other types. This involves parsing the domain, checking against the Public Suffix List, and categorizing accordingly.
 - **Whitelist Application**: A whitelist of domains is applied to filter out domains that should not be blocked or allowed.
 
-#### 5. **DNS Checks**
+#### 5. **DNS Checks**  
 
-- **Domain Validation**: Each domain is checked via DNS to ensure it resolves correctly. This involves sending a DNS query and verifying the response.
-- **Parallel Processing**: To improve efficiency, DNS checks are performed in parallel using the `parallel` tool. Results are stored in temporary files and aggregated.
+- **Domain Validation**: Each domain is checked via DNS to ensure it resolves correctly. This involves sending a DNS query and verifying the response.  
+- **Parallel Processing**: To improve efficiency, DNS checks are performed in parallel using the `parallel` tool. Results are stored in temporary files and aggregated.  
+- **DNS Resolution Method**: Verification is performed using Cloudflare's DNS-over-HTTPS (DoH) service[^1](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/), which provides:  
+  - Encrypted DNS queries  
+  - JSON API support  
+  - High reliability and performance  
+
+**Endpoint**: `https://cloudflare-dns.com/dns-query`  
+
+For detailed information about the API requests and response format, please refer to the [official documentation](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/make-api-requests/dns-json/).
 
 #### 6. **Result Validation and Saving**
 
