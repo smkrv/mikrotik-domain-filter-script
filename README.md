@@ -42,7 +42,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 
 - **Domain Validation**: Each domain is checked via DNS to ensure it resolves correctly. This involves sending a DNS query and verifying the response.  
 - **Parallel Processing**: To improve efficiency, DNS checks are performed in parallel using the `parallel` tool. Results are stored in temporary files and aggregated.  
-- **DNS Resolution Method**: Verification is performed using Cloudflare's DNS-over-HTTPS (DoH) service[¹](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/), which provides:  
+- **DNS Resolution Method**: Verification is performed using Cloudflare's DNS-over-HTTPS (DoH) service[^¹](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/), which provides:  
   - Encrypted DNS queries  
   - JSON API support  
   - High reliability and performance  
