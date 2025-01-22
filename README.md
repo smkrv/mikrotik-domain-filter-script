@@ -1,1 +1,343 @@
-# mikrotik-domain-filter-script
+### Detailed Description of Script Workflow and Logic
+
+This script is designed to filter and process domain lists for specific purposes, such as blocking or allowing certain domains in a network environment. Below is a comprehensive breakdown of the script's workflow, including all checks, filtering steps, and the overall pipeline.
+
+#### 1. **Initialization and Setup**
+
+- **Path Settings**: The script defines various paths for working directories, source files, output files, and temporary files.
+- **Global Variables**: Variables for statistics like `TOTAL_DOMAINS`, `PROCESSED_DOMAINS`, and `VALID_DOMAINS` are declared.
+- **Logging**: A logging mechanism is set up to record events and errors in a log file.
+- **Lock Mechanism**: A file lock is used to ensure that only one instance of the script runs at a time, preventing conflicts.
+- **Directory Initialization**: Required directories are checked and created if they don’t exist.
+- **Dependency Check**: The script verifies the presence of required system tools like `curl`, `grep`, `awk`, `sort`, and `parallel`.
+
+#### 2. **File Checks and Cleanup**
+
+- **Required Files**: The script checks for the existence of essential files like `sources.txt`, `sources_special.txt`, and others. If any are missing, the script exits with an error.
+- **Cleanup**: Temporary files and outdated cache files are cleaned up to free up space and maintain script efficiency.
+
+#### 3. **Public Suffix List**
+
+- **Loading Public Suffix List**: The script downloads and updates the Public Suffix List if it’s outdated. This list is used to determine the type of domains (second-level, regional, etc.).
+
+#### 4. **Domain Filtering and Classification**
+
+- **Initial Filtering**: Domains are filtered based on regex patterns to ensure they match the expected format. Invalid domains are discarded.
+- **Domain Classification**: Domains are classified into second-level, regional, and other types. This involves parsing the domain, checking against the Public Suffix List, and categorizing accordingly.
+- **Whitelist Application**: A whitelist of domains is applied to filter out domains that should not be blocked or allowed.
+
+#### 5. **DNS Checks**
+
+- **Domain Validation**: Each domain is checked via DNS to ensure it resolves correctly. This involves sending a DNS query and verifying the response.
+- **Parallel Processing**: To improve efficiency, DNS checks are performed in parallel using the `parallel` tool. Results are stored in temporary files and aggregated.
+
+#### 6. **Result Validation and Saving**
+
+- **Result Validation**: The final lists of domains are validated to ensure they meet the required format and are correctly classified.
+- **Saving Results**: The validated domain lists are saved to output files. Backups are created before overwriting existing files to ensure data integrity.
+- **Gist Update**: If the results are valid, the script updates GitHub Gists with the new domain lists.
+
+#### 7. **Update Checks and Backups**
+
+- **Update Needed Check**: The script checks if the source files have changed using MD5 checksums. If no changes are detected, the script exits early to save resources.
+- **Backup Restoration**: If any step fails, the script restores backups of the output files to maintain the previous state.
+
+### Pipeline Summary
+
+1. **Initialization**: Set up paths, variables, and dependencies.
+2. **File Checks**: Verify required files and clean up temporary files.
+3. **Public Suffix List**: Load and update the Public Suffix List.
+4. **Domain Filtering**:
+   - Initial filter based on regex.
+   - Classify domains into types.
+   - Apply whitelist.
+5. **DNS Checks**: Validate domains via DNS in parallel.
+6. **Result Validation and Saving**:
+   - Validate final domain lists.
+   - Save results to output files.
+   - Update GitHub Gists.
+7. **Cleanup and Backup**: Clean temporary files and restore backups if needed.
+
+This script ensures that domain lists are accurately filtered, validated, and updated, providing a robust solution for managing domain-based network policies.
+
+### File Descriptions
+
+Below is a detailed description of the files used in the script, including their purpose and the format of their contents.
+
+#### `SOURCES_FILE`
+
+**File Path:** `${WORK_DIR}/sources.txt`
+
+**Description:**
+This file contains a list of URLs from which the main domain lists are downloaded. Each URL should be on a separate line. The script will download the content from these URLs and process them to extract and filter domains.
+
+**Format:**
+```
+https://example.com/domain-list1.txt
+https://example.org/domain-list2.txt
+https://example.net/domain-list3.txt
+```
+
+**Example Contents:**
+```
+https://raw.githubusercontent.com/example/repo/main/domains.txt
+https://example.com/additional-domains.txt
+```
+
+#### `SOURCESSPECIAL_FILE`
+
+**File Path:** `${WORK_DIR}/sources_special.txt`
+
+**Description:**
+This file contains a list of URLs from which the special domain lists are downloaded. Each URL should be on a separate line. The script will download the content from these URLs and process them to extract and filter domains, which will then be excluded from the main list to avoid duplicates.
+
+**Format:**
+```
+https://example.com/special-domain-list1.txt
+https://example.org/special-domain-list2.txt
+https://example.net/special-domain-list3.txt
+```
+
+**Example Contents:**
+```
+https://raw.githubusercontent.com/example/repo/main/special-domains.txt
+https://example.com/additional-special-domains.txt
+```
+
+#### `WHITELIST_FILE`
+
+**File Path:** `${WORK_DIR}/sources_whitelist.txt`
+
+**Description:**
+This file contains a list of domains that should be excluded from both the main and special lists. Each domain should be on a separate line. The script will use this file to filter out domains that are listed in the whitelist.
+
+**Format:**
+```
+example.com
+example.org
+example.net
+```
+
+**Example Contents:**
+```
+mikrotik.com
+wikipedia.org
+```
+
+### Summary
+
+- **`SOURCES_FILE`**: Contains URLs for downloading the main domain lists.
+- **`SOURCESSPECIAL_FILE`**: Contains URLs for downloading the special domain lists.
+- **`WHITELIST_FILE`**: Contains domains that should be excluded from both the main and special lists.
+
+Each file should have one URL or domain per line, with no additional spaces or characters.
+
+### Detailed Description of Domain Processing in Downloaded Lists
+
+This document describes the detailed process of handling domains from downloaded lists, including filtering, validation, whitelisting, and special list exclusions. The examples provided will use the specified domains and their subdomains, along with complex input formats such as Clash and Clash New.
+
+#### 1. Initial Filtering
+
+The initial filtering step removes invalid domains, comments, and empty lines from the input lists. It also converts all domains to lowercase and removes any spaces. Additionally, it handles complex formats like Clash and Clash New, extracting only the domains.
+
+**Example Input:**
+```
+# This is a comment
+MikroTik.com
+help.mikrotik.com
+Debian.org
+youtube.com
+wikipedia.org
+instagram.com
+tiktok.com
+spotify.com
+googlevideo.com
+invalid domain
+.invalid
+invalid.
+# Clash format
+ALLOW-IP, 1.1.1.1
+ALLOW-IP, 8.8.8.8
+FALLBACK, example.com
+# Clash New format
+rule, DOMAIN-SUFFIX, example.com
+rule, IP-CIDR, 1.1.1.1/32
+```
+
+**Example Output:**
+```
+debian.org
+googlevideo.com
+help.mikrotik.com
+instagram.com
+mikrotik.com
+spotify.com
+tiktok.com
+wikipedia.org
+youtube.com
+youtube.co.uk
+instagram.net.pl
+workplace.co.jp
+```
+
+#### 2. Domain Classification
+
+Domains are classified into three categories: second-level, regional, and other.
+
+**Second-level domains:**
+```
+debian.org
+mikrotik.com
+wikipedia.org
+youtube.com
+```
+
+**Regional domains:**
+```
+youtube.co.uk
+instagram.net.pl
+workplace.co.jp
+```
+
+**Other domains:**
+```
+help.mikrotik.com
+googlevideo.com
+instagram.com
+spotify.com
+tiktok.com
+```
+
+#### 3. DNS Validation
+
+Domains are checked for validity using DNS queries. Only domains that resolve correctly are retained.
+
+**Example Input:**
+```
+debian.org
+googlevideo.com
+help.mikrotik.com
+instagram.com
+mikrotik.com
+spotify.com
+tiktok.com
+wikipedia.org
+youtube.com
+youtube.co.uk
+instagram.net.pl
+workplace.co.jp
+```
+
+**Example Output (assuming all domains resolve correctly):**
+```
+debian.org
+googlevideo.com
+help.mikrotik.com
+instagram.com
+mikrotik.com
+spotify.com
+tiktok.com
+wikipedia.org
+youtube.com
+youtube.co.uk
+instagram.net.pl
+workplace.co.jp
+```
+
+#### 4. Whitelisting
+
+Domains listed in the whitelist are excluded from the main and special lists.
+
+**Example Whitelist:**
+```
+mikrotik.com
+wikipedia.org
+```
+
+**Main List Before Whitelisting:**
+```
+debian.org
+googlevideo.com
+help.mikrotik.com
+instagram.com
+mikrotik.com
+spotify.com
+tiktok.com
+wikipedia.org
+youtube.com
+youtube.co.uk
+instagram.net.pl
+workplace.co.jp
+```
+
+**Main List After Whitelisting:**
+```
+debian.org
+googlevideo.com
+instagram.com
+spotify.com
+tiktok.com
+youtube.com
+youtube.co.uk
+instagram.net.pl
+workplace.co.jp
+```
+
+#### 5. Special List Exclusion
+
+Domains in the special list are excluded from the main list to avoid duplicates.
+
+**Example Special List:**
+```
+tiktok.com
+youtube.co.uk
+```
+
+**Main List Before Exclusion:**
+```
+debian.org
+googlevideo.com
+instagram.com
+spotify.com
+tiktok.com
+youtube.com
+youtube.co.uk
+instagram.net.pl
+workplace.co.jp
+```
+
+**Main List After Exclusion:**
+```
+debian.org
+googlevideo.com
+instagram.com
+spotify.com
+instagram.net.pl
+workplace.co.jp
+```
+
+### Summary of Processing Steps
+
+1. **Initial Filtering:** Remove invalid domains, comments, and empty lines. Convert to lowercase and remove spaces. Extract domains from complex formats like Clash and Clash New.
+2. **Domain Classification:** Classify domains into second-level, regional, and other categories.
+3. **DNS Validation:** Check domain validity using DNS queries.
+4. **Whitelisting:** Exclude domains listed in the whitelist.
+5. **Special List Exclusion:** Exclude domains from the special list to avoid duplicates.
+
+### Example Final Output
+
+**Main List:**
+```
+debian.org
+googlevideo.com
+instagram.com
+spotify.com
+instagram.net.pl
+workplace.co.jp
+```
+
+**Special List:**
+```
+tiktok.com
+youtube.co.uk
+```
