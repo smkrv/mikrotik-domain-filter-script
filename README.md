@@ -631,27 +631,6 @@ While the scripts are identical in functionality, they are maintained as separat
 [Aggregate Results]
 ```
 
-### Key Features:
-
-- **Lock Mechanism**: Prevents multiple instances from running simultaneously
-- **Caching**: DNS results are cached to improve performance
-- **Parallel Processing**: DNS checks are performed in parallel
-- **Error Recovery**: Automatic backup restoration on failure
-- **Validation**: Multiple validation steps ensure data integrity
-- **Logging**: Comprehensive logging of all operations
-- **Resource Management**: Cleanup of temporary files and old cache
-
-### Processing Stages:
-
-1. **Initialization**: Setup environment and check dependencies
-2. **Update Check**: Determine if processing is needed
-3. **List Loading**: Download domain lists from sources
-4. **Processing**: Filter and validate domains
-5. **Classification**: Organize domains by type
-6. **DNS Validation**: Verify domain validity
-7. **Result Management**: Save and distribute results
-8. **Cleanup**: Clean temporary files and release resources
-
 This workflow ensures reliable and efficient domain list processing while maintaining data integrity and handling errors gracefully.
 
 ---
