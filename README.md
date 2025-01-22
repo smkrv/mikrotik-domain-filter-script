@@ -635,7 +635,7 @@ While the scripts are identical in functionality, they are maintained as separat
 This workflow ensures reliable and efficient domain list processing while maintaining data integrity and handling errors gracefully.
 
 
-## Benchmarking
+## Benchmarking ⏱️ 📈
 
 > **Environment**: Amazon Lightsail (512 MB RAM, 2 vCPUs, 20 GB SSD, Debian 12.8)  
 > **Processing**: 86K domains → 1,970 unique (main) + 431 unique (special)  
