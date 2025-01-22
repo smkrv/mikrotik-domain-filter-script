@@ -5,7 +5,7 @@
 
   <img src="/assets/images/logo@2x.png" alt="Mikrotik Domain Filter Script" style="width: 70%; max-width: 960px; max-height: 480px; aspect-ratio: 16/9; object-fit: contain;"/>
 
-  ### Mikrotik Domain Filter Script: Bash solution for filtering domain lists, creating Adlists and DNS Static entries for Mikrotik RouterOS
+  ### Mikrotik Domain Filter Script: Bash solution for filtering domain lists, creating Adlists and DNS Static or DNS FWD entries for Mikrotik RouterOS
 </div>
 
 ---
