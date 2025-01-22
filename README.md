@@ -57,6 +57,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 ## Public Suffix List
 
 - **Loading Public Suffix List**: The script downloads and updates the Public Suffix List if it’s outdated. This list is used to determine the type of domains (second-level, regional, etc.).
+- The script utilizes the Mozilla Public Suffix List[^¹](https://publicsuffix.org/) - a standardized database of domain suffix information that helps properly identify the registrable domain parts. This list is crucial for:  
 
 ## Domain Filtering and Classification
 
