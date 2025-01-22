@@ -156,7 +156,7 @@ https://example.com/additional-special-domains.txt
 **File Path:** `${WORK_DIR}/sources_whitelist.txt`
 
 **Description:**
-This file contains a list of domains that should be excluded from both the main and special lists. Each domain should be on a separate line. The script will use this file to filter out domains that are listed in the whitelist.
+This file contains a list of URLs from which whitelist domain lists are downloaded. Each URL should be on a separate line. The script downloads and processes these lists to create a comprehensive whitelist. Domains found in these lists will be excluded from both the main and special lists during processing.  
 
 **Format:**
 ```
