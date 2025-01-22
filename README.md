@@ -346,11 +346,11 @@ tiktok.com
 youtube.co.uk
 ```
 
-# GitHub Gist Update Scripts
+### GitHub Gist Update Scripts
 
 This repository contains two identical shell scripts ([update_gist_special.sh](/update_gist_special.sh) and [update_gist.sh](/update_gist.sh)) that update different GitHub Gists with local file content. The scripts share the same functionality but use different variables and target different Gists.
 
-## Scripts Overview
+#### Scripts Overview
 
 Both scripts perform the same operations but are configured for different Gists:
 - `update_gist_special.sh` - configured for one specific Gist
@@ -358,7 +358,7 @@ Both scripts perform the same operations but are configured for different Gists:
 
 The only difference between these scripts is in their configuration variables (GitHub token, Gist ID, file names, and paths).
 
-## Technical Details
+#### Technical Details
 
 The scripts require:
 - `curl` for making API requests
@@ -370,7 +370,7 @@ Each script performs the following operations:
 3. Updates the target Gist via GitHub API
 4. Verifies the update was successful
 
-## Usage
+#### Usage
 
 To use either script, you need to configure the following variables:
 ```bash
@@ -382,9 +382,11 @@ LOCAL_FILE_PATH="path/to/local/file"
 
 After configuring the variables, you can run either script to update its corresponding Gist with the content from the specified local file.
 
-## Note
+#### Note
 
 While the scripts are identical in functionality, they are maintained as separate files to avoid the need for changing variables when updating different Gists. This approach allows for easier automation and maintenance of multiple Gist updates.
+
+---
 
 ## Legal Disclaimer and Limitation of Liability  
 
