@@ -3,6 +3,12 @@
 ├── CODE_OF_CONDUCT.md
 ├── LICENSE
 ├── README.md
+├── STRUCTURE.md
+├── assets
+│   └── images
+│       └── logo@2x.png
 ├── dns-static-updater.rsc
-└── mikrotik-domain-filter-bash.sh
+├── mikrotik-domain-filter-bash.sh
+├── update_gist.sh
+└── update_gist_special.sh
 ```
