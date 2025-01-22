@@ -7,7 +7,12 @@
 # DISCLAIMER: Use caution when adding large domain lists (beyond a few hundred domains).
 # Large lists might cause memory issues on some devices.
 # For more details, see: https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Introduction
-# --------------------------------------------------------------------------------------  
+#
+# @license: CC BY-NC-SA 4.0 International
+# @author: SMKRV
+# @github: https://github.com/smkrv/mikrotik-domain-filter-script
+# @source: https://github.com/smkrv/mikrotik-domain-filter-script
+# -------------------------------------------------------------------------------------- 
 
 :local listname "allow-list";
 :local fwdto "localhost";

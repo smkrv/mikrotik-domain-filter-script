@@ -1,3 +1,22 @@
+# @license: CC BY-NC-SA 4.0 International
+# @author: SMKRV
+# @github: https://github.com/smkrv/mikrotik-domain-filter-script
+# @source: https://github.com/smkrv/mikrotik-domain-filter-script
+#
+# Mikrotik Domain Filter Script is a robust Bash solution primarily designed
+# for filtering and processing domain lists for Mikrotik devices, enabling
+# straightforward management of blocklists or allowlists.
+#
+# For a detailed description, please visit the GitHub repository:
+# https://github.com/smkrv/mikrotik-domain-filter-script
+#
+# By combining domain classification, DNS validation, and whitelist handling,
+# this tool offers a comprehensive workflow to create accurate and reliable
+# filtered lists, ensuring efficient network policy enforcement. It is also
+# suitable for building and maintaining Adlists by returning 0.0.0.0 for
+# domains serving advertisements, integrating seamlessly with DNS Static in
+# Mikrotik RouterOS, and aiding in generating DNS FWD records.  
+
 #!/bin/bash
 set -e
 
