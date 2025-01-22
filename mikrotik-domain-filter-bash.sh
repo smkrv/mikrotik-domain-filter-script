@@ -15,7 +15,7 @@
 # filtered lists, ensuring efficient network policy enforcement. It is also
 # suitable for building and maintaining Adlists by returning 0.0.0.0 for
 # domains serving advertisements, integrating seamlessly with DNS Static in
-# Mikrotik RouterOS, and aiding in generating DNS FWD records.  
+# Mikrotik RouterOS, and aiding in generating DNS FWD records.
 
 #!/bin/bash
 set -e
@@ -25,7 +25,7 @@ set -e
 
 # Path settings
 # Important: Verify that the following directory path is correct
-readonly WORK_DIR="/home/unblock"
+readonly WORK_DIR="/home/domain-filter-mikrotik"
 
 # Important: Ensure the file names below match the actual files in the directory
 readonly SOURCES_FILE="${WORK_DIR}/sources.txt"
