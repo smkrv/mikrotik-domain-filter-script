@@ -1,3 +1,6 @@
+#!/bin/bash
+set -e
+
 # @license: CC BY-NC-SA 4.0 International
 # @author: SMKRV
 # @github: https://github.com/smkrv/mikrotik-domain-filter-script
@@ -16,9 +19,6 @@
 # suitable for building and maintaining Adlists by returning 0.0.0.0 for
 # domains serving advertisements, integrating seamlessly with DNS Static in
 # Mikrotik RouterOS, and aiding in generating DNS FWD records.
-
-#!/bin/bash
-set -e
 
 # Enable debugging
 # set -x
@@ -59,8 +59,6 @@ export DNS_MAX_RETRIES
 
 # Global variables for statistics
 declare -i TOTAL_DOMAINS=0
-declare -i PROCESSED_DOMAINS=0
-declare -i VALID_DOMAINS=0
 
 # Enable debugging
 # exec 2>"${WORK_DIR}/debug.log"
@@ -71,7 +69,7 @@ mkdir -p "$(dirname "$LOG_FILE")"
 # Clear old log
 : > "$LOG_FILE"
 
-# Check for required files 
+# Check for required files
 check_required_files() {
     local missing_files=()
 
@@ -87,7 +85,8 @@ check_required_files() {
 
 # Enhanced logging
 log() {
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo "[$timestamp] $1" | tee -a "$LOG_FILE"
 }
 
@@ -368,7 +367,8 @@ initial_filter() {
 # Function to determine domain type
 get_domain_type() {
     local domain=$1
-    local parts=(${domain//./ })
+    local parts
+    IFS='.' read -ra parts <<< "$domain"
     local levels=${#parts[@]}
     local base="${parts[-2]}.${parts[-1]}"
 
@@ -525,7 +525,7 @@ apply_whitelist() {
 
     # Create temporary file for exclusion patterns
     local whitelist_pattern="${TMP_DIR}/whitelist_pattern.txt"
-    > "$whitelist_pattern"
+    true > "$whitelist_pattern"
 
     # Process whitelist
     while IFS= read -r domain; do
