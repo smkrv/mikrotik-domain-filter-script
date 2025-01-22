@@ -3,7 +3,7 @@
   ![GitHub last commit](https://img.shields.io/github/last-commit/smkrv/mikrotik-domain-filter-script.svg?style=flat-square) [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by-nc-sa/4.0/) ![RouterOS](https://img.shields.io/badge/RouterOS-7.17-blue) ![RouterOS](https://img.shields.io/badge/RouterOS-6.17-blue) ![Status](https://img.shields.io/badge/Status-Production-green) ![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?logo=Cloudflare&logoColor=white) ![English](https://img.shields.io/badge/en-English-blue?style=flat-square)
 
 
-  <img src="/assets/images/logo@2x.png" alt="HA Text AI" style="width: 50%; max-width: 256px; max-height: 128px; aspect-ratio: 2/1; object-fit: contain;"/>
+  <img src="/assets/images/logo@2x.png" alt="HA Text AI" style="width: 50%; max-width: 720px; max-height: 256px; aspect-ratio: 16/9; object-fit: contain;"/>
 
   ### Mikrotik Domain Filter Script: Bash solution for filtering domain lists, creating Adlists and DNS Static entries for Mikrotik RouterOS
 </div>
