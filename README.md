@@ -30,6 +30,7 @@
 16. [Running the Script](#running-the-script)
 17. [Important Notes](#important-notes)
 18. [Script Workflow Diagram](#script-workflow-diagram)
+19. [Benchmarking](#benchmarking)
 
 ---
 
@@ -632,6 +633,13 @@ While the scripts are identical in functionality, they are maintained as separat
 ```
 
 This workflow ensures reliable and efficient domain list processing while maintaining data integrity and handling errors gracefully.
+
+
+## Benchmarking
+
+> **Environment**: Amazon Lightsail (512 MB RAM, 2 vCPUs, 20 GB SSD, Debian 12.8)  
+> **Processing**: 86K domains → 1,970 unique (main) + 431 unique (special)  
+> **Performance**: 24 min processing time, 42% peak CPU
 
 ---
 
