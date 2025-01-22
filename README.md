@@ -499,7 +499,7 @@ While the scripts are identical in functionality, they are maintained as separat
 - Monitor log files for any issues
 - Ensure sufficient disk space on both the script host and MikroTik router
 - Regular monitoring of script execution is recommended
-- ** ⚠️ Remember: Test first, backup always, deploy confidently! 🛡️**
+- **⚠️ Remember: Test first, backup always, deploy confidently! 🛡️**
 
 ---
 
