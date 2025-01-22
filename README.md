@@ -29,6 +29,7 @@
 15. [MikroTik Router Configuration](#mikrotik-router-configuration)
 16. [Running the Script](#running-the-script)
 17. [Important Notes](#important-notes)
+18. [Script Workflow Diagram](#script-workflow-diagram)
 
 ---
 
@@ -499,6 +500,159 @@ While the scripts are identical in functionality, they are maintained as separat
 - Ensure sufficient disk space on both the script host and MikroTik router
 - Regular monitoring of script execution is recommended
 - **Remember: Test first, backup always, deploy confidently! 🛡️**
+
+---
+
+## Script Workflow Diagram
+
+```markdown
+### Main Process Flow
+
+[START]
+   │
+   ▼
+[Initialization]
+   │
+   ├── Check required files
+   ├── Initialize directories
+   ├── Check dependencies
+   ├── Acquire lock
+   └── Load Public Suffix List
+   │
+   ▼
+[Update Check]
+   │
+   ├── Calculate MD5 of source files
+   ├── Compare with previous MD5
+   └── Exit if no changes
+   │
+   ▼
+[Load Domain Lists]
+   │
+   ├── Download from sources.txt
+   ├── Download from sources_special.txt
+   └── Download from sources_whitelist.txt (if exists)
+   │
+   ▼
+[Initial Processing]
+   │
+   ├── Remove invalid domains
+   ├── Convert to lowercase
+   ├── Remove duplicates
+   └── Basic format validation
+   │
+   ▼
+[Domain Classification]
+   │
+   ├── Second-level domains
+   ├── Regional domains
+   └── Other domains
+   │
+   ▼
+[DNS Validation]
+   │
+   ├── Parallel DNS checks
+   ├── Cache results
+   └── Retry failed checks
+   │
+   ▼
+[Whitelist Application]
+   │
+   ├── Load whitelist
+   ├── Filter main list
+   └── Filter special list
+   │
+   ▼
+[List Intersection Check]
+   │
+   ├── Compare main and special lists
+   └── Remove duplicates
+   │
+   ▼
+[Result Validation]
+   │
+   ├── Format check
+   ├── DNS resolution verification
+   └── Content validation
+   │
+   ▼
+[Save Results]
+   │
+   ├── Create backups
+   ├── Save main list
+   └── Save special list
+   │
+   ▼
+[Update Gists]
+   │
+   ├── Update main list gist
+   └── Update special list gist
+   │
+   ▼
+[Cleanup]
+   │
+   ├── Remove temporary files
+   ├── Clear old cache
+   └── Release lock
+   │
+   ▼
+[END]
+
+## Error Handling Flow
+
+[Error Detected]
+   │
+   ▼
+[Log Error]
+   │
+   ▼
+[Restore Backups]
+   │
+   ▼
+[Cleanup]
+   │
+   ▼
+[Release Lock]
+   │
+   ▼
+[Exit with Error]
+
+## Parallel Processing
+
+[DNS Checks]
+   │
+   ├── Worker 1 ──> Process domains
+   ├── Worker 2 ──> Process domains
+   ├── Worker 3 ──> Process domains
+   ├── Worker 4 ──> Process domains
+   └── Worker 5 ──> Process domains
+   │
+   ▼
+[Aggregate Results]
+```
+
+### Key Features:
+
+- **Lock Mechanism**: Prevents multiple instances from running simultaneously
+- **Caching**: DNS results are cached to improve performance
+- **Parallel Processing**: DNS checks are performed in parallel
+- **Error Recovery**: Automatic backup restoration on failure
+- **Validation**: Multiple validation steps ensure data integrity
+- **Logging**: Comprehensive logging of all operations
+- **Resource Management**: Cleanup of temporary files and old cache
+
+### Processing Stages:
+
+1. **Initialization**: Setup environment and check dependencies
+2. **Update Check**: Determine if processing is needed
+3. **List Loading**: Download domain lists from sources
+4. **Processing**: Filter and validate domains
+5. **Classification**: Organize domains by type
+6. **DNS Validation**: Verify domain validity
+7. **Result Management**: Save and distribute results
+8. **Cleanup**: Clean temporary files and release resources
+
+This workflow ensures reliable and efficient domain list processing while maintaining data integrity and handling errors gracefully.
 
 ---
 
