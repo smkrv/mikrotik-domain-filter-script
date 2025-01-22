@@ -362,6 +362,77 @@ tiktok.com
 youtube.co.uk
 ```
 
+
+## Project Structure
+
+```
+.
+├── CODE_OF_CONDUCT.md
+├── LICENSE
+├── README.md
+├── STRUCTURE.md
+├── assets
+│   └── images
+│       └── logo@2x.png
+├── dns-static-updater.rsc      # MikroTik RouterOS script for DNS Static records import
+├── mikrotik-domain-filter-bash.sh    # Main domain filtering script
+├── update_gist.sh             # Script for updating main list Gist
+└── update_gist_special.sh     # Script for updating special list Gist
+```
+
+## Installation and Setup
+
+### Prerequisites
+- Unix-like operating system
+- Bash shell
+- Required permissions to execute scripts
+- Sufficient disk space for logs and cache
+
+### Setup Steps
+
+1. **Create Directory Structure**
+   - Create a working directory
+   - Place all necessary source files
+   - Configure required variables in scripts
+
+2. **Prepare Scripts**
+   ```bash
+   chmod +x mikrotik-domain-filter-bash.sh
+   chmod +x update_gist.sh        # If using Gist updates
+   chmod +x update_gist_special.sh # If using special Gist updates
+   ```
+
+3. **Configure Log Rotation**
+   - Set up proper log rotation to manage script logs
+   - Ensure sufficient disk space for logs
+
+4. **Gist Updates (Optional)**
+   - If you don't plan to use Gist updates, comment out the calls to `update_gist.sh` and `update_gist_special.sh` in `mikrotik-domain-filter-bash.sh`
+
+### MikroTik Router Configuration
+
+1. **Script Setup**
+   - Import `dns-static-updater.rsc` to your MikroTik Router OS
+   - Set appropriate permissions for the script
+   - Ensure sufficient storage space for DNS list download and DNS records
+
+### Running the Script
+
+1. Execute the main script:
+   ```bash
+   ./mikrotik-domain-filter-bash.sh
+   ```
+
+2. Check logs for any errors if the script fails to run properly
+
+### Important Notes
+- Verify all variables are properly configured before running
+- Monitor log files for any issues
+- Ensure sufficient disk space on both the script host and MikroTik router
+- Regular monitoring of script execution is recommended
+- **Remember: Test first, backup always, deploy confidently! 🛡️**
+
+
 ### GitHub Gist Update Scripts
 
 This repository contains two identical shell scripts ([update_gist_special.sh](/update_gist_special.sh) and [update_gist.sh](/update_gist.sh)) that update different GitHub Gists with local file content. The scripts share the same functionality but use different variables and target different Gists.
