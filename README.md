@@ -1,6 +1,6 @@
 ### Mikrotik Domain Filter Script
 
-**Mikrotik Domain Filter Script** is a robust Bash solution primarily designed for filtering and processing domain lists for [Mikrotik](https://mikrotik.com/) devices, enabling straightforward management of blocklists or allowlists. This script also adapts seamlessly to other network environments, making it suitable for a wide range of domain-based filtering tasks. By combining domain classification, DNS validation, and whitelist handling, this tool offers a comprehensive workflow to create accurate and reliable filtered lists, ensuring efficient network policy enforcement.
+**Mikrotik Domain Filter Script** is a robust Bash solution (designed to run on *nix systems, not on RouterOS) primarily designed for filtering and processing domain lists for [Mikrotik](https://mikrotik.com/) devices, enabling straightforward management of blocklists or allowlists. This script also adapts seamlessly to other network environments, making it suitable for a wide range of domain-based filtering tasks. By combining domain classification, DNS validation, and whitelist handling, this tool offers a comprehensive workflow to create accurate and reliable filtered lists, ensuring efficient network policy enforcement.
 
 Furthermore, this script is an excellent fit for building and maintaining [Adlists](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Adlist), which are curated collections of domains serving advertisements. By returning the IP address `0.0.0.0` for ad-serving domain queries, the Adlist feature effectively null-routes unwanted content, improving user experience and reducing bandwidth usage.  
 In addition, the script integrates seamlessly with [DNS Static](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-DNSStatic) in Mikrotik RouterOS, allowing administrators to override specific DNS queries with custom entries, regular expressions, or dummy IP addresses for better control over DNS resolution. This functionality is particularly helpful for redirecting or blocking traffic at the DNS level—whether it’s entire zones or select domains.  
@@ -345,3 +345,43 @@ workplace.co.jp
 tiktok.com
 youtube.co.uk
 ```
+
+## Legal Disclaimer and Limitation of Liability  
+
+### Software Disclaimer  
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,   
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A   
+PARTICULAR PURPOSE AND NONINFRINGEMENT.  
+
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,   
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,   
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER   
+DEALINGS IN THE SOFTWARE.  
+
+## 📝 License
+
+Author: SMKRV
+[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) - see [LICENSE](LICENSE) for details.
+
+## 💡 Support the Project
+
+The best support is:
+- Sharing feedback
+- Contributing ideas
+- Recommending to friends
+- Reporting issues
+- Star the repository
+
+If you want to say thanks financially, you can send a small token of appreciation in USDT:
+
+**USDT Wallet (TRC10/TRC20):**
+`TXC9zYHYPfWUGi4Sv4R1ctTBGScXXQk5HZ`
+
+*Open-source is built by community passion!* 🚀
+
+---
+
+Made with ❤️ for the Mikrotik Community
+
+[Report Bug](https://github.com/smkrv/mikrotik-domain-filter-script/issues) · [Request Feature](https://github.com/smkrv/mikrotik-domain-filter-script/issues)
