@@ -1,13 +1,11 @@
-### Mikrotik Domain Filter Script
-
 <div align="center">  
 
-  ![GitHub last commit](https://img.shields.io/github/last-commit/smkrv/ha-text-ai.svg?style=flat-square) [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by-nc-sa/4.0/) ![English](https://img.shields.io/badge/en-English-blue?style=flat-square)
+  ![GitHub last commit](https://img.shields.io/github/last-commit/smkrv/mikrotik-domain-filter-script.svg?style=flat-square) [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by-nc-sa/4.0/) ![English](https://img.shields.io/badge/en-English-blue?style=flat-square)
 
 
   <img src="/assets/images/logo@2x.png" alt="HA Text AI" style="width: 50%; max-width: 256px; max-height: 128px; aspect-ratio: 2/1; object-fit: contain;"/>
 
-### Mikrotik Domain Filter Script: Bash solution for filtering domain lists, creating Adlists and DNS Static entries for [Mikrotik](https://mikrotik.com/) RouterOS.
+### Mikrotik Domain Filter Script: Bash solution for filtering domain lists, creating Adlists and DNS Static entries for Mikrotik RouterOS.
 </div>
 
 **Mikrotik Domain Filter Script** is a robust Bash solution (designed to run on *nix systems, not on RouterOS) primarily designed for filtering and processing domain lists for [Mikrotik](https://mikrotik.com/) devices, enabling straightforward management of blocklists or allowlists. This script also adapts seamlessly to other network environments, making it suitable for a wide range of domain-based filtering tasks. By combining domain classification, DNS validation, and whitelist handling, this tool offers a comprehensive workflow to create accurate and reliable filtered lists, ensuring efficient network policy enforcement.
