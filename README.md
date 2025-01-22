@@ -1,6 +1,10 @@
-### Detailed Description of Script Workflow and Logic
+### Mikrotik Domain Filter Script
 
-This script is designed to filter and process domain lists for specific purposes, such as blocking or allowing certain domains in a network environment. Below is a comprehensive breakdown of the script's workflow, including all checks, filtering steps, and the overall pipeline.
+**Mikrotik Domain Filter Script** is a robust Bash solution primarily designed for filtering and processing domain lists for [Mikrotik](https://mikrotik.com/) devices, enabling straightforward management of blocklists or allowlists. This script also adapts seamlessly to other network environments, making it suitable for a wide range of domain-based filtering tasks. By combining domain classification, DNS validation, and whitelist handling, this tool offers a comprehensive workflow to create accurate and reliable filtered lists, ensuring efficient network policy enforcement.
+
+Furthermore, this script is an excellent fit for building and maintaining [Adlists](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Adlist), which are curated collections of domains serving advertisements. By returning the IP address `0.0.0.0` for ad-serving domain queries, the Adlist feature effectively null-routes unwanted content, improving user experience and reducing bandwidth usage.  
+In addition, the script integrates seamlessly with [DNS Static](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-DNSStatic) in Mikrotik RouterOS, allowing administrators to override specific DNS queries with custom entries, regular expressions, or dummy IP addresses for better control over DNS resolution. This functionality is particularly helpful for redirecting or blocking traffic at the DNS level—whether it’s entire zones or select domains.  
+Lastly, the script can also aid in generating DNS FWD records, making it a comprehensive solution for all DNS-related configurations in a Mikrotik environment. The repository includes an example script specifically tailored for RouterOS, demonstrating how to load domain lists onto the router and form DNS FWD entries, ensuring an even smoother integration process.
 
 #### 1. **Initialization and Setup**
 
