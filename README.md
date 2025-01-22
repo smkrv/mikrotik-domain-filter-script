@@ -30,7 +30,7 @@
 16. [Running the Script](#running-the-script)
 17. [Important Notes](#important-notes)
 18. [Script Workflow Diagram](#script-workflow-diagram)
-19. [Benchmarking](#benchmarking)
+19. [Benchmarking](#benchmarking-%EF%B8%8F-)
 
 ---
 
