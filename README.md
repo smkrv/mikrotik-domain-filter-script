@@ -31,6 +31,7 @@
 17. [Important Notes](#important-notes)
 18. [Script Workflow Diagram](#script-workflow-diagram)
 19. [Benchmarking](#benchmarking-%EF%B8%8F-)
+20. [Prerequisites](#prerequisites)
 
 ---
 
@@ -501,6 +502,22 @@ While the scripts are identical in functionality, they are maintained as separat
 - Ensure sufficient disk space on both the script host and MikroTik router
 - Regular monitoring of script execution is recommended
 - **⚠️ Remember: Test first, backup always, deploy confidently! 🛡️**
+
+---
+
+## Prerequisites  
+
+Before running the script, ensure that your system meets all the requirements listed in [REQUIREMENTS.md](REQUIREMENTS.md).  
+
+The script requires several system utilities and proper permissions to function correctly. Follow the quick installation guide below to set up all necessary dependencies.  
+
+### Quick Dependencies Installation  
+
+For Ubuntu/Debian systems:  
+```bash  
+sudo apt-get update  
+sudo apt-get install curl jq gawk grep parallel
+```
 
 ---
 
