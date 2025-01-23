@@ -482,10 +482,40 @@ While the scripts are identical in functionality, they are maintained as separat
 
 ### MikroTik Router Configuration
 
-1. **Script Setup**
-   - Import `dns-static-updater.rsc` to your MikroTik Router OS
-   - Set appropriate permissions for the script
-   - Ensure sufficient storage space for DNS list download and DNS records
+#### System Requirements  
+- RouterOS version 6.17 or higher  
+- Sufficient storage space for DNS list download  
+- Memory available for DNS records processing  
+- Internet connection for fetching domain lists  
+
+#### Router Setup  
+1. Import `dns-static-updater.rsc` to your MikroTik RouterOS  
+2. Set appropriate permissions for the script execution  
+3. Configure DNS settings on your router  
+4. Ensure sufficient storage space for DNS list operations  
+
+#### Script Variables Configuration  
+The script requires configuration of the following variables:  
+
+| Variable  | Description | Example |  
+|-----------|-------------|---------|  
+| `listname` | Name of the address-list for DNS entries | `"allow-list"` |  
+| `fwdto` | DNS server address for query forwarding | `"localhost"` or `"1.1.1.1"` |  
+| `url` | Raw URL of the domain list file | `"https://raw.githubusercontent.com/example/repo/main/domains.txt"` |  
+
+#### Script Setup Instructions  
+1. Set `:local listname` to your desired address-list name  
+2. Set `:local fwdto` to your preferred DNS server  
+3. Set `:local url` to the raw URL of your domain list  
+4. Ensure the domain list file is accessible via the specified URL  
+
+#### Important Notes  
+- Use caution when adding large domain lists (beyond a few hundred domains)  
+- Large lists might cause memory issues on some devices  
+- The script adds a 10ms delay between operations to prevent resource exhaustion  
+- Monitor system resources during initial setup with large lists  
+
+For more details about DNS configuration in RouterOS, see: [MikroTik DNS Documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Introduction)
 
 ### Running the Script
 
