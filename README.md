@@ -21,6 +21,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 #### TLDR; ⚡ Quick Setup Guide
 
 <div style="font-size: 80%;">  
+
 > #### Prerequisites  
 > - Unix-like system  
 > - Install dependencies: `sudo apt-get install curl jq gawk grep parallel`  
@@ -67,6 +68,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 > 3. Set up local Mangle and other necessary rules  
 >  
 > ⓘ **Tip**: Test thoroughly and monitor system resources!
+
 </div>  
 
 ---
