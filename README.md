@@ -20,7 +20,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 
 #### TLDR; ⚡ Quick Setup Guide
 
-<div style="font-size: 60%;">  
+<div style="font-size:80%; border: 1px solid #ddd; padding: 10px; border-radius: 5px; background-color: #f9f9f9;">
 
 >  **Prerequisites**
 > - Unix-like system  
