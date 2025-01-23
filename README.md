@@ -437,7 +437,7 @@ While the scripts are identical in functionality, they are maintained as separat
 ## Project Structure
 
 ```
-.
+...
 ├── dns-static-updater.rsc      # MikroTik RouterOS script for DNS Static records import
 ├── mikrotik-domain-filter-bash.sh    # Main domain filtering script
 ├── update_gist.sh             # Script for updating main list Gist
