@@ -20,13 +20,13 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 
 #### TLDR; ⚡ Quick Setup Guide
 
-<div style="font-size: 80%;">  
+<div style="font-size: 60%;">  
 
-> #### Prerequisites  
+>  **Prerequisites**
 > - Unix-like system  
 > - Install dependencies: `sudo apt-get install curl jq gawk grep parallel`  
 >  
-> #### Setup Steps  
+> **Setup Steps**  
 > 1. Create a working directory  
 > 2. Copy scripts:  
 >    - `mikrotik-domain-filter-bash.sh`  
@@ -56,15 +56,15 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 >    ./mikrotik-domain-filter-bash.sh  
 >    ```  
 >  
-> #### Output  
+> **Output**  
 > - Filtered domain lists:  
 >   * `filtered_domains_mikrotik.txt`  
 >   * `filtered_domains_special_mikrotik.txt`  
 > - Logs: `script.log`  
 >  
-> #### MikroTik Configuration  
+> **MikroTik Configuration**  
 > 1. Import `dns-static-updater.rsc`  
-> 2. Configure DNS static records for main and special domain lists  
+> 2. Configure DNS static records import for main and special domain lists  
 > 3. Set up local Mangle and other necessary rules  
 >  
 > ⓘ **Tip**: Test thoroughly and monitor system resources!
@@ -238,7 +238,7 @@ https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/
 
 ### Detailed Description of Domain Processing in Downloaded Lists
 
-This document describes the detailed process of handling domains from downloaded lists, including filtering, validation, whitelisting, and special list exclusions. The examples provided will use the specified domains and their subdomains, along with complex input formats such as Clash and Clash New.
+This part describes the detailed process of handling domains from downloaded lists, including filtering, validation, whitelisting, and special list exclusions. The examples provided will use the specified domains and their subdomains, along with complex input formats such as Clash and Clash New.
 
 #### 1. Initial Filtering
 
@@ -272,9 +272,8 @@ rule, IP-CIDR, 1.1.1.1/32
 ```
 debian.org
 googlevideo.com
-help.mikrotik.com
-instagram.com
 mikrotik.com
+instagram.com
 spotify.com
 tiktok.com
 wikipedia.org
@@ -306,10 +305,10 @@ workplace.co.jp
 **Other domains:**
 ```
 help.mikrotik.com
-googlevideo.com
-instagram.com
-spotify.com
-tiktok.com
+cdn.cache.googlevideo.com
+help.instagram.com
+cdn.spotify.com
+global.tiktok.com
 ```
 
 #### 3. DNS Validation
@@ -320,7 +319,6 @@ Domains are checked for validity using DNS queries. Only domains that resolve co
 ```
 debian.org
 googlevideo.com
-help.mikrotik.com
 instagram.com
 mikrotik.com
 spotify.com
@@ -335,8 +333,7 @@ workplace.co.jp
 **Example Output (assuming all domains resolve correctly):**
 ```
 debian.org
-googlevideo.com
-help.mikrotik.com
+googlevideo.co
 instagram.com
 mikrotik.com
 spotify.com
