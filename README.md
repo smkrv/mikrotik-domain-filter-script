@@ -18,8 +18,9 @@ Furthermore, this script is an excellent fit for building and maintaining [Adlis
 In addition, the script integrates seamlessly with [DNS Static](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-DNSStatic) in Mikrotik RouterOS, allowing administrators to override specific DNS queries with custom entries, regular expressions, or dummy IP addresses for better control over DNS resolution. This functionality is particularly helpful for redirecting or blocking traffic at the DNS level—whether it’s entire zones or select domains.  
 Lastly, the script can also aid in generating DNS FWD records, making it a comprehensive solution for all DNS-related configurations in a Mikrotik environment. The repository [includes an example script (dns-static-updater.rsc)](dns-static-updater.rsc) specifically tailored for RouterOS, demonstrating how to load domain lists onto the router and form DNS FWD entries, ensuring an even smoother integration process.
 
-### TLDR; ⚡ Quick Setup Guide
+#### TLDR; ⚡ Quick Setup Guide
 
+<div style="font-size: 80%;">  
 > #### Prerequisites  
 > - Unix-like system  
 > - Install dependencies: `sudo apt-get install curl jq gawk grep parallel`  
@@ -66,6 +67,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 > 3. Set up local Mangle and other necessary rules  
 >  
 > ⓘ **Tip**: Test thoroughly and monitor system resources!
+</div>  
 
 ---
 
