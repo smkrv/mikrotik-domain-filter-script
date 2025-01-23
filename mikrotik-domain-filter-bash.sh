@@ -173,7 +173,7 @@ cleanup() {
 
     # Clean old cache files
     if [[ -d "$CACHE_DIR" ]]; then
-        local cache_files_count=$(find "$CACHE_DIR" -type f -name "*.cache" -mtime +90 -delete -print | wc -l)
+        local cache_files_count; cache_files_count=$(find "$CACHE_DIR" -type f -name "*.cache" -mtime +90 -delete -print | wc -l)local cache_time=$(stat -c %Y "$cache_file")
         if [[ $cache_files_count -gt 0 ]]; then
             log "Removed $cache_files_count outdated cache files"
         fi
@@ -199,11 +199,11 @@ check_domain() {
 
     # Check cache
     if [[ -f "$cache_file" ]]; then
-        local cache_time=$(stat -c %Y "$cache_file")
-        local current_time=$(date +%s)
+        local cache_time; cache_time=$(stat -c %Y "$cache_file")
+        local current_time; current_time=$(date +%s)
         # Check if cache is older than 3 months
         if (( current_time - cache_time < 7776000 )); then
-            local cache_status=$(cat "$cache_file")
+            local cache_status; cache_status=$(cat "$cache_file")
             [[ "$cache_status" == "valid" ]] && return 0 || return 1
         fi
     fi
@@ -247,7 +247,7 @@ check_domains_parallel() {
         return 1
     fi
 
-    local total=$(wc -l < "$input")
+    local total; total=$(wc -l < "$input")
     if [[ $total -eq 0 ]]; then
         log "WARNING: Input file $input is empty"
         return 1
@@ -307,7 +307,7 @@ check_domains_parallel() {
 
         if [[ -s "$temp_output" ]]; then
             mv "$temp_output" "$output"
-            local final_count=$(wc -l < "$output")
+            local final_count; final_count=$(wc -l < "$output")
             log "DNS check completed successfully. Valid domains: $final_count"
             return 0
         else
@@ -414,7 +414,7 @@ process_domains() {
 
     # First pass - find all second-level and regional domains
     while IFS= read -r domain; do
-        local parts=(${domain//./ })
+        local parts; mapfile -t parts <<< "${domain//./ }"
         local levels=${#parts[@]}
 
         # Limit to 4th level
@@ -443,7 +443,7 @@ process_domains() {
 
     # Second pass - filter subdomains
     while IFS= read -r domain; do
-        local parts=(${domain//./ })
+        local parts; mapfile -t parts <<< "${domain//./ }"
         local skip=false
 
         # Skip already processed domains
@@ -506,7 +506,7 @@ prepare_domains_for_dns_check() {
     cat "${input_dir}/second.txt" "${input_dir}/regional.txt" 2>/dev/null | \
     sort -u > "$output"
 
-    local total=$(wc -l < "$output")
+    local total; total=$(wc -l < "$output")
     log "Domains prepared for DNS check: $total"
 }
 
@@ -529,7 +529,7 @@ apply_whitelist() {
 
     # Process whitelist
     while IFS= read -r domain; do
-        local parts=(${domain//./ })
+        local parts; mapfile -t parts <<< "${domain//./ }"
         local levels=${#parts[@]}
         local base_domain
 
@@ -567,7 +567,7 @@ check_intersections() {
 
     log "Checking intersections between lists..."
 
-    local intersect=$(grep -Fx -f "$main_list" "$special_list")
+    local intersect; intersect=$(grep -Fx -f "$main_list" "$special_list")
     if [[ -n "$intersect" ]]; then
         log "WARNING: Intersections found between lists:"
         echo "$intersect" | while read -r domain; do
@@ -583,7 +583,7 @@ load_lists() {
     local sources=$1
     local output=$2
 
-    > "$output"
+    true > "$output"
 
     if [[ ! -f "$sources" ]]; then
         log "ERROR: Sources file $sources does not exist"
@@ -644,8 +644,8 @@ save_results() {
     fi
 
     # Check write permissions for directories
-    local main_dir=$(dirname "$main_list")
-    local special_dir=$(dirname "$special_list")
+    local main_dir; main_dir=$(dirname "$main_list")
+    local special_dir; special_dir=$(dirname "$special_list")
 
     if [[ ! -w "$main_dir" || ! -w "$special_dir" || \
           (-f "$main_list" && ! -w "$main_list") || \
@@ -655,7 +655,7 @@ save_results() {
     fi
 
     # Create temporary files with unique identifier
-    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local timestamp; timestamp=$(date +%Y%m%d_%H%M%S)
     local temp_main="${main_list}.${timestamp}.tmp"
     local temp_special="${special_list}.${timestamp}.tmp"
 
@@ -667,8 +667,8 @@ save_results() {
     fi
 
     # Check temporary files content
-    local main_count=$(wc -l < "$temp_main")
-    local special_count=$(wc -l < "$temp_special")
+    local main_count; main_count=$(wc -l < "$temp_main")
+    local special_count; special_count=$(wc -l < "$temp_special")
 
     log "Prepared for saving: $main_count domains in main list, $special_count in special list"
 
