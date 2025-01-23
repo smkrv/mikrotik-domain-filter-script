@@ -10,7 +10,7 @@
 
 ---
 
-## Table of Contents
+### Table of Contents
 
 1. [Introduction](#introduction)
 2. [Initialization and Setup](#initialization-and-setup)
@@ -43,7 +43,7 @@ Furthermore, this script is an excellent fit for building and maintaining [Adlis
 In addition, the script integrates seamlessly with [DNS Static](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-DNSStatic) in Mikrotik RouterOS, allowing administrators to override specific DNS queries with custom entries, regular expressions, or dummy IP addresses for better control over DNS resolution. This functionality is particularly helpful for redirecting or blocking traffic at the DNS level—whether it’s entire zones or select domains.  
 Lastly, the script can also aid in generating DNS FWD records, making it a comprehensive solution for all DNS-related configurations in a Mikrotik environment. The repository [includes an example script (dns-static-updater.rsc)](dns-static-updater.rsc) specifically tailored for RouterOS, demonstrating how to load domain lists onto the router and form DNS FWD entries, ensuring an even smoother integration process.
 
-## Initialization and Setup
+### Initialization and Setup
 
 - **Path Settings**: The script defines various paths for working directories, source files, output files, and temporary files.
 - **Global Variables**: Variables for statistics like `TOTAL_DOMAINS`, `PROCESSED_DOMAINS`, and `VALID_DOMAINS` are declared.
@@ -52,23 +52,23 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 - **Directory Initialization**: Required directories are checked and created if they don’t exist.
 - **Dependency Check**: The script verifies the presence of required system tools like `curl`, `grep`, `awk`, `sort`, and `parallel`.
 
-## File Checks and Cleanup
+### File Checks and Cleanup
 
 - **Required Files**: The script checks for the existence of essential files like `sources.txt`, `sources_special.txt`, and others. If any are missing, the script exits with an error.
 - **Cleanup**: Temporary files and outdated cache files are cleaned up to free up space and maintain script efficiency.
 
-## Public Suffix List
+### Public Suffix List
 
 - **Loading Public Suffix List**: The script downloads and updates the Public Suffix List if it’s outdated. This list is used to determine the type of domains (second-level, regional, etc.).
 - The script utilizes the Mozilla Public Suffix List[^¹](https://publicsuffix.org/) - a standardized database of domain suffix information that helps properly identify the registrable domain parts.
 
-## Domain Filtering and Classification
+### Domain Filtering and Classification
 
 - **Initial Filtering**: Domains are filtered based on regex patterns to ensure they match the expected format. Invalid domains are discarded.
 - **Domain Classification**: Domains are classified into second-level, regional, and other types. This involves parsing the domain, checking against the Public Suffix List, and categorizing accordingly.
 - **Whitelist Application**: A whitelist of domains is applied to filter out domains that should not be blocked or allowed.
 
-## DNS Checks  
+### DNS Checks  
 
 - **Domain Validation**: Each domain is checked via DNS to ensure it resolves correctly. This involves sending a DNS query and verifying the response.  
 - **Parallel Processing**: To improve efficiency, DNS checks are performed in parallel using the `parallel` tool. Results are stored in temporary files and aggregated.  
@@ -81,18 +81,18 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 
 For detailed information about the API requests and response format, please refer to the [official documentation](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/make-api-requests/dns-json/).
 
-## Result Validation and Saving
+### Result Validation and Saving
 
 - **Result Validation**: The final lists of domains are validated to ensure they meet the required format and are correctly classified.
 - **Saving Results**: The validated domain lists are saved to output files. Backups are created before overwriting existing files to ensure data integrity.
 - **Gist Update**: If the results are valid, the script updates GitHub Gists with the new domain lists.
 
-## Update Checks and Backups
+### Update Checks and Backups
 
 - **Update Needed Check**: The script checks if the source files have changed using MD5 checksums. If no changes are detected, the script exits early to save resources.
 - **Backup Restoration**: If any step fails, the script restores backups of the output files to maintain the previous state.
 
-## Pipeline Summary
+### Pipeline Summary
 
 1. **Initialization**: Set up paths, variables, and dependencies.
 2. **File Checks**: Verify required files and clean up temporary files.
@@ -110,11 +110,11 @@ For detailed information about the API requests and response format, please refe
 
 This script ensures that domain lists are accurately filtered, validated, and updated, providing a robust solution for managing domain-based network policies.
 
-## File Descriptions
+### File Descriptions
 
 Below is a detailed description of the files used in the script, including their purpose and the format of their contents.
 
-### `SOURCES_FILE`
+#### `SOURCES_FILE`
 
 **File Path:** `${WORK_DIR}/sources.txt`
 
@@ -134,7 +134,7 @@ https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/
 https://example.com/additional-domains.txt
 ```
 
-### `SOURCESSPECIAL_FILE`
+#### `SOURCESSPECIAL_FILE`
 
 **File Path:** `${WORK_DIR}/sources_special.txt`
 
@@ -154,7 +154,7 @@ https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/
 https://example.com/additional-special-domains.txt
 ```
 
-### `WHITELIST_FILE`
+#### `WHITELIST_FILE`
 
 **File Path:** `${WORK_DIR}/sources_whitelist.txt`
 
@@ -174,7 +174,7 @@ https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/
 https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/native.samsung.txt
 ```
 
-## Summary
+### Summary
 
 - **`SOURCES_FILE`**: Contains URLs for downloading the main domain lists.
 - **`SOURCESSPECIAL_FILE`**: Contains URLs for downloading the special domain lists.
@@ -182,11 +182,11 @@ https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/
 
 **Each file should have one URL or domain per line, with no additional spaces or characters.**
 
-## Detailed Description of Domain Processing in Downloaded Lists
+### Detailed Description of Domain Processing in Downloaded Lists
 
 This document describes the detailed process of handling domains from downloaded lists, including filtering, validation, whitelisting, and special list exclusions. The examples provided will use the specified domains and their subdomains, along with complex input formats such as Clash and Clash New.
 
-### 1. Initial Filtering
+#### 1. Initial Filtering
 
 The initial filtering step removes invalid domains, comments, and empty lines from the input lists. It also converts all domains to lowercase and removes any spaces. Additionally, it handles complex formats like Clash and Clash New, extracting only the domains.
 
@@ -230,7 +230,7 @@ instagram.net.pl
 workplace.co.jp
 ```
 
-### 2. Domain Classification
+#### 2. Domain Classification
 
 Domains are classified into three categories: second-level, regional, and other.
 
@@ -258,7 +258,7 @@ spotify.com
 tiktok.com
 ```
 
-### 3. DNS Validation
+#### 3. DNS Validation
 
 Domains are checked for validity using DNS queries. Only domains that resolve correctly are retained.
 
@@ -294,7 +294,7 @@ instagram.net.pl
 workplace.co.jp
 ```
 
-### 4. Whitelisting
+#### 4. Whitelisting
 
 Domains listed in the whitelist are excluded from the main and special lists.
 
@@ -333,7 +333,7 @@ instagram.net.pl
 workplace.co.jp
 ```
 
-### 5. Special List Exclusion
+#### 5. Special List Exclusion
 
 Domains in the special list are excluded from the main list to avoid duplicates.
 
@@ -366,7 +366,7 @@ instagram.net.pl
 workplace.co.jp
 ```
 
-### Summary of Processing Steps
+#### Summary of Processing Steps
 
 1. **Initial Filtering:** Remove invalid domains, comments, and empty lines. Convert to lowercase and remove spaces. Extract domains from complex formats like Clash and Clash New.
 2. **Domain Classification:** Classify domains into second-level, regional, and other categories.
@@ -374,7 +374,7 @@ workplace.co.jp
 4. **Whitelisting:** Exclude domains listed in the whitelist.
 5. **Special List Exclusion:** Exclude domains from the special list to avoid duplicates.
 
-### Example Final Output
+#### Example Final Output
 
 **Main List:**
 ```
@@ -392,11 +392,11 @@ tiktok.com
 youtube.co.uk
 ```
 
-## GitHub Gist Update Scripts
+### GitHub Gist Update Scripts
 
 This repository contains two identical shell scripts ([update_gist_special.sh](/update_gist_special.sh) and [update_gist.sh](/update_gist.sh)) that update different GitHub Gists with local file content. The scripts share the same functionality but use different variables and target different Gists.
 
-### Scripts Overview
+#### Scripts Overview
 
 Both scripts perform the same operations but are configured for different Gists:
 - `update_gist_special.sh` - configured for one specific Gist
@@ -404,7 +404,7 @@ Both scripts perform the same operations but are configured for different Gists:
 
 The only difference between these scripts is in their configuration variables (GitHub token, Gist ID, file names, and paths).
 
-### Technical Details
+#### Technical Details
 
 The scripts require:
 - `curl` for making API requests
@@ -416,7 +416,7 @@ Each script performs the following operations:
 3. Updates the target Gist via GitHub API
 4. Verifies the update was successful
 
-### Usage
+#### Usage
 
 To use either script, you need to configure the following variables:
 ```bash
@@ -428,13 +428,13 @@ LOCAL_FILE_PATH="path/to/local/file"
 
 After configuring the variables, you can run either script to update its corresponding Gist with the content from the specified local file.
 
-### Note
+#### Note
 
 While the scripts are identical in functionality, they are maintained as separate files to avoid the need for changing variables when updating different Gists. This approach allows for easier automation and maintenance of multiple Gist updates.
 
 ---
 
-## Project Structure
+### Project Structure
 
 ```
 ...
@@ -444,16 +444,16 @@ While the scripts are identical in functionality, they are maintained as separat
 └── update_gist_special.sh     # Script for updating special list Gist
 ```
 
-## Installation and Setup
+### Installation and Setup
 
-### Prerequisites
+#### Prerequisites
 - Unix-like operating system
 - Bash shell
 - Sudo rights (might be required for setup)  
 - Required permissions to execute scripts
 - Sufficient disk space for logs and cache
 
-### Setup Steps
+#### Setup Steps
 
 1. **Create Directory Structure**
    - Create a working directory
@@ -480,7 +480,7 @@ While the scripts are identical in functionality, they are maintained as separat
 4. **Gist Updates (Optional)**
    - If you don't plan to use Gist updates, comment out the calls to `update_gist.sh` and `update_gist_special.sh` in `mikrotik-domain-filter-bash.sh`
 
-### Running the Script
+#### Running the Script
 
 1. Execute the main script:
    ```bash
@@ -489,7 +489,7 @@ While the scripts are identical in functionality, they are maintained as separat
 
 2. Check logs for any errors if the script fails to run properly
 
-### Important Notes
+#### Important Notes
 - Verify all variables are properly configured before running
 - Monitor log files for any issues
 - Ensure sufficient disk space on both the script host and MikroTik router
@@ -498,13 +498,13 @@ While the scripts are identical in functionality, they are maintained as separat
 
 ---
 
-## Prerequisites  
+### Prerequisites  
 
 Before running the script, ensure that your system meets all the requirements listed in [REQUIREMENTS.md](REQUIREMENTS.md).  
 
 The script requires several system utilities and proper permissions to function correctly. Follow the quick installation guide below to set up all necessary dependencies.  
 
-### Quick Dependencies Installation  
+#### Quick Dependencies Installation  
 
 For Ubuntu/Debian systems:  
 ```bash  
@@ -514,7 +514,7 @@ sudo apt-get install curl jq gawk grep parallel
 
 ---
 
-## Script Workflow Diagram
+### Script Workflow Diagram
 
 ```markdown
 # ➤ Main Process Flow
@@ -644,7 +644,7 @@ sudo apt-get install curl jq gawk grep parallel
 
 This workflow ensures reliable and efficient domain list processing while maintaining data integrity and handling errors gracefully.
 
-## Benchmarking ⏱️ 📈
+### Benchmarking ⏱️ 📈
 
 > **Environment**: Amazon Lightsail (512 MB RAM, 2 vCPUs, 20 GB SSD, Debian 12.8)  
 > **Processing**: 86K domains + 12K whitelist + 2.7K special → 1,970 unique (main) + 431 unique (special)  
