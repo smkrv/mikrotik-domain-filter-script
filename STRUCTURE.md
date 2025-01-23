@@ -3,6 +3,7 @@
 ├── CODE_OF_CONDUCT.md
 ├── LICENSE
 ├── README.md
+├── REQUIREMENTS.md
 ├── STRUCTURE.md
 ├── assets
 │   └── images
