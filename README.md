@@ -18,56 +18,57 @@ Furthermore, this script is an excellent fit for building and maintaining [Adlis
 In addition, the script integrates seamlessly with [DNS Static](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-DNSStatic) in Mikrotik RouterOS, allowing administrators to override specific DNS queries with custom entries, regular expressions, or dummy IP addresses for better control over DNS resolution. This functionality is particularly helpful for redirecting or blocking traffic at the DNS level—whether it’s entire zones or select domains.  
 Lastly, the script can also aid in generating DNS FWD records, making it a comprehensive solution for all DNS-related configurations in a Mikrotik environment. The repository [includes an example script (dns-static-updater.rsc)](dns-static-updater.rsc) specifically tailored for RouterOS, demonstrating how to load domain lists onto the router and form DNS FWD entries, ensuring an even smoother integration process.
 
----
+<details>
+<summary><h3>TLDR; ⚡ Quick Setup Guide</h3></summary>
 
-### TLDR: Mikrotik Domain Filter Script Setup
+> **Prerequisites**  
+> • Unix-like system  
+> • Dependencies: `sudo apt-get install curl jq gawk grep parallel`
 
-#### Prerequisites
-- Unix-like system
-- Install dependencies: `sudo apt-get install curl jq gawk grep parallel`
+**1.** Create working directory  
+**2.** Copy scripts:
+  - `mikrotik-domain-filter-bash.sh`
+  - `update_gist.sh`
+  - `update_gist_special.sh`
 
-#### Setup Steps
-1. Create a working directory
-2. Copy scripts:
-   - `mikrotik-domain-filter-bash.sh`
-   - `update_gist.sh`
-   - `update_gist_special.sh`
+**3.** Configure scripts:
+  - Set working directory path in main script
+  - Create source files:
+    ```
+    sources.txt           → Main domain list URLs
+    sources_special.txt   → Special domain list URLs
+    sources_whitelist.txt → URLs of domain lists to exclude
+    ```
 
-3. Configure scripts:
-   - Set working directory path in `mikrotik-domain-filter-bash.sh`
-   - Create source files:
-     * `sources.txt`: Main domain list URLs
-     * `sources_special.txt`: Special domain list URLs
-     * `sources_whitelist.txt`: URLs of domain lists to exclude  
+**4.** Configure Gist updates (optional):
+  - Set GitHub token and Gist variables in update scripts
+  - Or comment out Gist update functions
 
-4. Configure Gist updates (optional):
-   - Set GitHub token and Gist variables in `update_gist.sh` and `update_gist_special.sh`
-   - Or comment out Gist update functions in main script
+**5.** Add download URLs to source files
 
-5. Add download URLs to source files
+**6.** Set permissions:
+```bash
+chmod +x mikrotik-domain-filter-bash.sh update_gist.sh update_gist_special.sh
+```
 
-6. Set execution permissions:
-   ```bash
-   chmod +x mikrotik-domain-filter-bash.sh update_gist.sh update_gist_special.sh
-   ```
+**7.** Run script:
+```bash
+./mikrotik-domain-filter-bash.sh
+```
 
-7. Run the main script:
-   ```bash
-   ./mikrotik-domain-filter-bash.sh
-   ```
+> **Output Files**  
+> • `filtered_domains_mikrotik.txt`  
+> • `filtered_domains_special_mikrotik.txt`  
+> • `script.log`
 
-#### Output
-- Filtered domain lists:
-  * `filtered_domains_mikrotik.txt`
-  * `filtered_domains_special_mikrotik.txt`
-- Logs: `script.log`
+> **MikroTik Setup**  
+> 1. Import `dns-static-updater.rsc`  
+> 2. Configure DNS static records  
+> 3. Set up Mangle rules  
+>
+> ℹ️ _Test thoroughly and monitor resources!_
 
-#### MikroTik Configuration
-1. Import `dns-static-updater.rsc`
-2. Configure DNS static records for main and special domain lists
-3. Set up local Mangle and other necessary rules
-
-**Tip**: Test thoroughly and monitor system resources!
+</details>
 
 ---
 
