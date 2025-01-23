@@ -26,12 +26,12 @@
 12. [GitHub Gist Update Scripts](#github-gist-update-scripts)
 13. [Project Structure](#project-structure)
 14. [Installation and Setup](#installation-and-setup)
-15. [MikroTik Router Configuration](#mikrotik-router-configuration)
-16. [Running the Script](#running-the-script)
-17. [Important Notes](#important-notes)
-18. [Script Workflow Diagram](#script-workflow-diagram)
+15. [Running the Script](#running-the-script)
+16. [Important Notes](#important-notes)
+17. [Script Workflow Diagram](#script-workflow-diagram)
+18. [Prerequisites](#prerequisites)
 19. [Benchmarking](#benchmarking-%EF%B8%8F-)
-20. [Prerequisites](#prerequisites)
+20. [MikroTik Router Configuration](#mikrotik-router-configuration)
 
 ---
 
@@ -480,43 +480,6 @@ While the scripts are identical in functionality, they are maintained as separat
 4. **Gist Updates (Optional)**
    - If you don't plan to use Gist updates, comment out the calls to `update_gist.sh` and `update_gist_special.sh` in `mikrotik-domain-filter-bash.sh`
 
-### MikroTik Router Configuration
-
-#### System Requirements  
-- RouterOS version 6.17 or higher  
-- Sufficient storage space for DNS list download  
-- Memory available for DNS records processing  
-- Internet connection for fetching domain lists  
-
-#### Router Setup  
-1. Import `dns-static-updater.rsc` to your MikroTik RouterOS  
-2. Set appropriate permissions for the script execution  
-3. Configure DNS settings on your router  
-4. Ensure sufficient storage space for DNS list operations  
-
-#### Script Variables Configuration  
-The script requires configuration of the following variables:  
-
-| Variable  | Description | Example |  
-|-----------|-------------|---------|  
-| `listname` | Name of the address-list for DNS entries | `"allow-list"` |  
-| `fwdto` | DNS server address for query forwarding | `"localhost"` or `"1.1.1.1"` |  
-| `url` | Raw URL of the domain list file | `"https://raw.githubusercontent.com/example/repo/main/domains.txt"` |  
-
-#### Script Setup Instructions  
-1. Set `:local listname` to your desired address-list name  
-2. Set `:local fwdto` to your preferred DNS server  
-3. Set `:local url` to the raw URL of your domain list  
-4. Ensure the domain list file is accessible via the specified URL  
-
-#### Important Notes  
-- Use caution when adding large domain lists (beyond a few hundred domains)  
-- Large lists might cause memory issues on some devices  
-- The script adds a 10ms delay between operations to prevent resource exhaustion  
-- Monitor system resources during initial setup with large lists  
-
-For more details about DNS configuration in RouterOS, see: [MikroTik DNS Documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Introduction)
-
 ### Running the Script
 
 1. Execute the main script:
@@ -681,12 +644,48 @@ sudo apt-get install curl jq gawk grep parallel
 
 This workflow ensures reliable and efficient domain list processing while maintaining data integrity and handling errors gracefully.
 
-
 ## Benchmarking ⏱️ 📈
 
 > **Environment**: Amazon Lightsail (512 MB RAM, 2 vCPUs, 20 GB SSD, Debian 12.8)  
 > **Processing**: 86K domains + 12K whitelist + 2.7K special → 1,970 unique (main) + 431 unique (special)  
 > **Performance**: 24 min processing time, 42% peak CPU
+
+### MikroTik Router Configuration
+
+#### System Requirements  
+- RouterOS version 6.17 or higher  
+- Sufficient storage space for DNS list download  
+- Memory available for DNS records processing  
+- Internet connection for fetching domain lists  
+
+#### Router Setup  
+1. Import `dns-static-updater.rsc` to your MikroTik RouterOS  
+2. Set appropriate permissions for the script execution  
+3. Configure DNS settings on your router  
+4. Ensure sufficient storage space for DNS list operations  
+
+#### Script Variables Configuration  
+The script requires configuration of the following variables:  
+
+| Variable  | Description | Example |  
+|-----------|-------------|---------|  
+| `listname` | Name of the address-list for DNS entries | `"allow-list"` |  
+| `fwdto` | DNS server address for query forwarding | `"localhost"` or `"1.1.1.1"` |  
+| `url` | Raw URL of the domain list file | `"https://raw.githubusercontent.com/example/repo/main/domains.txt"` |  
+
+#### Script Setup Instructions  
+1. Set `:local listname` to your desired address-list name  
+2. Set `:local fwdto` to your preferred DNS server  
+3. Set `:local url` to the raw URL of your domain list  
+4. Ensure the domain list file is accessible via the specified URL  
+
+#### Important Notes  
+- Use caution when adding large domain lists (beyond a few hundred domains)  
+- Large lists might cause memory issues on some devices  
+- The script adds a 10ms delay between operations to prevent resource exhaustion  
+- Monitor system resources during initial setup with large lists  
+
+For more details about DNS configuration in RouterOS, see: [MikroTik DNS Documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Introduction)
 
 ---
 
