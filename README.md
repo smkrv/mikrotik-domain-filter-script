@@ -20,8 +20,6 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 
 #### TLDR; ⚡ Quick Setup Guide
 
-<div style="font-size:80%; border: 1px solid #ddd; padding: 10px; border-radius: 5px; background-color: #f9f9f9;">
-
 >  **Prerequisites**
 > - Unix-like system  
 > - Install dependencies: `sudo apt-get install curl jq gawk grep parallel`  
@@ -68,8 +66,6 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 > 3. Set up local Mangle and other necessary rules  
 >  
 > ⓘ **Tip**: Test thoroughly and monitor system resources!
-
-</div>  
 
 ---
 
@@ -177,14 +173,16 @@ This file contains a list of URLs from which the main domain lists are downloade
 
 **Format:**
 ```
-https://example.com/domain-list1.txt
+https://example.com/domain-list1.txt # This is a comment
 https://example.org/domain-list2.txt
+# This is a comment
 https://example.net/domain-list3.txt
 ```
 
 **Example Contents:**
 ```
 https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/native.tiktok.txt
+# This is a comment
 https://example.com/additional-domains.txt
 ```
 
@@ -198,14 +196,14 @@ This file contains a list of URLs from which the special domain lists are downlo
 **Format:**
 ```
 https://example.com/special-domain-list1.txt
-https://example.org/special-domain-list2.txt
+https://example.org/special-domain-list2.txt # This is a comment
 https://example.net/special-domain-list3.txt
 ```
 
 **Example Contents:**
 ```
 https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/doh.txt
-https://example.com/additional-special-domains.txt
+https://example.com/additional-special-domains.txt # This is a comment
 ```
 
 #### `WHITELIST_FILE`
@@ -219,12 +217,13 @@ This file contains a list of URLs from which whitelist domain lists are download
 ```
 https://example.com/domain-list1.txt
 https://example.org/domain-list2.txt
+# This is a comment
 https://example.net/domain-list3.txt
 ```
 
 **Example Contents:**
 ```
-https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/native.apple.txt
+https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/native.apple.txt # This is a comment
 https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/native.samsung.txt
 ```
 
@@ -234,7 +233,7 @@ https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/
 - **`SOURCESSPECIAL_FILE`**: Contains URLs for downloading the special domain lists.
 - **`WHITELIST_FILE`**: Contains URLs for downloading domains that should be excluded from both the main and special lists.
 
-**Each file should have one URL or domain per line, with no additional spaces or characters.**
+**Each file should have one URL or domain per line, with no additional spaces or characters. Inline comments can be added after the URL using `#`, and comments can also be placed before or after the line.**
 
 ### Detailed Description of Domain Processing in Downloaded Lists
 
