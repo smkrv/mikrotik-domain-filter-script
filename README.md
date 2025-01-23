@@ -10,31 +10,6 @@
 
 ---
 
-### Table of Contents
-
-1. [Introduction](#introduction)
-2. [Initialization and Setup](#initialization-and-setup)
-3. [File Checks and Cleanup](#file-checks-and-cleanup)
-4. [Public Suffix List](#public-suffix-list)
-5. [Domain Filtering and Classification](#domain-filtering-and-classification)
-6. [DNS Checks](#dns-checks)
-7. [Result Validation and Saving](#result-validation-and-saving)
-8. [Update Checks and Backups](#update-checks-and-backups)
-9. [Pipeline Summary](#pipeline-summary)
-10. [File Descriptions](#file-descriptions)
-11. [Detailed Description of Domain Processing in Downloaded Lists](#detailed-description-of-domain-processing-in-downloaded-lists)
-12. [GitHub Gist Update Scripts](#github-gist-update-scripts)
-13. [Project Structure](#project-structure)
-14. [Installation and Setup](#installation-and-setup)
-15. [Running the Script](#running-the-script)
-16. [Important Notes](#important-notes)
-17. [Script Workflow Diagram](#script-workflow-diagram)
-18. [Prerequisites](#prerequisites)
-19. [Benchmarking](#benchmarking-%EF%B8%8F-)
-20. [MikroTik Router Configuration](#mikrotik-router-configuration)
-
----
-
 ## Introduction
 
 **Mikrotik Domain Filter Script** is a robust Bash solution (designed to run on *nix systems, not on RouterOS) primarily designed for filtering and processing domain lists for [Mikrotik](https://mikrotik.com/) devices, enabling straightforward management of blocklists or allowlists. This script also adapts seamlessly to other network environments, making it suitable for a wide range of domain-based filtering tasks. By combining domain classification, DNS validation, and whitelist handling, this tool offers a comprehensive workflow to create accurate and reliable filtered lists, ensuring efficient network policy enforcement.
@@ -42,6 +17,83 @@
 Furthermore, this script is an excellent fit for building and maintaining [Adlists](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Adlist), which are curated collections of domains serving advertisements. By returning the IP address `0.0.0.0` for ad-serving domain queries, the Adlist feature effectively null-routes unwanted content, improving user experience and reducing bandwidth usage.  
 In addition, the script integrates seamlessly with [DNS Static](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-DNSStatic) in Mikrotik RouterOS, allowing administrators to override specific DNS queries with custom entries, regular expressions, or dummy IP addresses for better control over DNS resolution. This functionality is particularly helpful for redirecting or blocking traffic at the DNS level—whether it’s entire zones or select domains.  
 Lastly, the script can also aid in generating DNS FWD records, making it a comprehensive solution for all DNS-related configurations in a Mikrotik environment. The repository [includes an example script (dns-static-updater.rsc)](dns-static-updater.rsc) specifically tailored for RouterOS, demonstrating how to load domain lists onto the router and form DNS FWD entries, ensuring an even smoother integration process.
+
+---
+
+## TLDR: Mikrotik Domain Filter Script Setup
+
+### Prerequisites
+- Unix-like system
+- Install dependencies: `sudo apt-get install curl jq gawk grep parallel`
+
+### Setup Steps
+1. Create a working directory
+2. Copy scripts:
+   - `mikrotik-domain-filter-bash.sh`
+   - `update_gist.sh`
+   - `update_gist_special.sh`
+
+3. Configure scripts:
+   - Set working directory path in `mikrotik-domain-filter-bash.sh`
+   - Create source files:
+     * `sources.txt`: Main domain list URLs
+     * `sources_special.txt`: Special domain list URLs
+     * `sources_whitelist.txt`: URLs of domain lists to exclude  
+
+4. Configure Gist updates (optional):
+   - Set GitHub token and Gist variables in `update_gist.sh` and `update_gist_special.sh`
+   - Or comment out Gist update functions in main script
+
+5. Add download URLs to source files
+
+6. Set execution permissions:
+   ```bash
+   chmod +x mikrotik-domain-filter-bash.sh update_gist.sh update_gist_special.sh
+   ```
+
+7. Run the main script:
+   ```bash
+   ./mikrotik-domain-filter-bash.sh
+   ```
+
+### Output
+- Filtered domain lists:
+  * `filtered_domains_mikrotik.txt`
+  * `filtered_domains_special_mikrotik.txt`
+- Logs: `script.log`
+
+### MikroTik Configuration
+1. Import `dns-static-updater.rsc`
+2. Configure DNS static records for main and special domain lists
+3. Set up local Mangle and other necessary rules
+
+**Tip**: Test thoroughly and monitor system resources!
+
+---
+
+### Table of Contents
+
+1. [Initialization and Setup](#initialization-and-setup)
+2. [File Checks and Cleanup](#file-checks-and-cleanup)
+3. [Public Suffix List](#public-suffix-list)
+4. [Domain Filtering and Classification](#domain-filtering-and-classification)
+5. [DNS Checks](#dns-checks)
+6. [Result Validation and Saving](#result-validation-and-saving)
+7. [Update Checks and Backups](#update-checks-and-backups)
+8. [Pipeline Summary](#pipeline-summary)
+9. [File Descriptions](#file-descriptions)
+10. [Detailed Description of Domain Processing in Downloaded Lists](#detailed-description-of-domain-processing-in-downloaded-lists)
+11. [GitHub Gist Update Scripts](#github-gist-update-scripts)
+12. [Project Structure](#project-structure)
+13. [Installation and Setup](#installation-and-setup)
+14. [Running the Script](#running-the-script)
+15. [Important Notes](#important-notes)
+16. [Script Workflow Diagram](#script-workflow-diagram)
+17. [Prerequisites](#prerequisites)
+18. [Benchmarking](#benchmarking-%EF%B8%8F-)
+19. [MikroTik Router Configuration](#mikrotik-router-configuration)
+
+---
 
 ### Initialization and Setup
 
