@@ -389,7 +389,7 @@ process_domains() {
     log "Classifying domains from: $input"
 
     # Create all required directories and files
-    mkdir -p "${output_dir}"/{second,regional,other}
+    mkdir -p "${output_dir}/{second,regional,other}"
 
     local second_level="${output_dir}/second.txt"
     local regional="${output_dir}/regional.txt"
@@ -414,7 +414,8 @@ process_domains() {
 
     # First pass - find all second-level and regional domains
     while IFS= read -r domain; do
-        local parts; mapfile -t parts <<< "${domain//./ }"
+        local parts
+        IFS='.' read -ra parts <<< "$domain"
         local levels=${#parts[@]}
 
         # Limit to 4th level
@@ -443,7 +444,8 @@ process_domains() {
 
     # Second pass - filter subdomains
     while IFS= read -r domain; do
-        local parts; mapfile -t parts <<< "${domain//./ }"
+        local parts
+        IFS='.' read -ra parts <<< "$domain"
         local skip=false
 
         # Skip already processed domains
