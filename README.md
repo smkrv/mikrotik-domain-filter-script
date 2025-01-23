@@ -56,20 +56,19 @@ chmod +x mikrotik-domain-filter-bash.sh update_gist.sh update_gist_special.sh
 ./mikrotik-domain-filter-bash.sh
 ```
 
-> **Output Files**  
-> • `filtered_domains_mikrotik.txt`  
-> • `filtered_domains_special_mikrotik.txt`  
-> • `script.log`
+**Output Files**  
+• `filtered_domains_mikrotik.txt`  
+• `filtered_domains_special_mikrotik.txt`  
+• `script.log`
 
-> **MikroTik Setup**  
-> 1. Import `dns-static-updater.rsc`  
-> 2. Configure DNS static records  
-> 3. Set up Mangle rules  
->
-> ℹ️ _Test thoroughly and monitor resources!_
+**MikroTik Setup**  
+1. Import `dns-static-updater.rsc`  
+2. Configure DNS static records  
+3. Set up Mangle rules  
+
+⚠️ _Test thoroughly and monitor resources!_
 
 </details>
-
 ---
 
 ### Table of Contents
