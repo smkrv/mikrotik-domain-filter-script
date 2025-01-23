@@ -28,9 +28,9 @@ RESPONSE=$(curl -s -X PATCH \
 
 # Check the result
 if echo "$RESPONSE" | jq -e '.id' > /dev/null; then
-    echo "✅ File fully replaced in Gist"
+    echo "✅ File fully replaced in Gist (main)"
 else
-    echo "❌ Error updating Gist!"
+    echo "❌ Error updating Gist (main)!"
     echo "$RESPONSE"
     exit 1
 fi
