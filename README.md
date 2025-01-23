@@ -20,13 +20,13 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 
 ---
 
-## TLDR: Mikrotik Domain Filter Script Setup
+### TLDR: Mikrotik Domain Filter Script Setup
 
-### Prerequisites
+#### Prerequisites
 - Unix-like system
 - Install dependencies: `sudo apt-get install curl jq gawk grep parallel`
 
-### Setup Steps
+#### Setup Steps
 1. Create a working directory
 2. Copy scripts:
    - `mikrotik-domain-filter-bash.sh`
@@ -56,13 +56,13 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
    ./mikrotik-domain-filter-bash.sh
    ```
 
-### Output
+#### Output
 - Filtered domain lists:
   * `filtered_domains_mikrotik.txt`
   * `filtered_domains_special_mikrotik.txt`
 - Logs: `script.log`
 
-### MikroTik Configuration
+#### MikroTik Configuration
 1. Import `dns-static-updater.rsc`
 2. Configure DNS static records for main and special domain lists
 3. Set up local Mangle and other necessary rules
