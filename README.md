@@ -19,7 +19,7 @@ In addition, the script integrates seamlessly with [DNS Static](https://help.mik
 Lastly, the script can also aid in generating DNS FWD records, making it a comprehensive solution for all DNS-related configurations in a Mikrotik environment. The repository [includes an example script (dns-static-updater.rsc)](dns-static-updater.rsc) specifically tailored for RouterOS, demonstrating how to load domain lists onto the router and form DNS FWD entries, ensuring an even smoother integration process.
 
 <details>
-<summary><h3>TLDR; ⚡ Quick Setup Guide</h3></summary>
+<summary><h3>&nbsp;&nbsp;&nbsp;&nbsp;TLDR; ⚡ Quick Setup Guide</h3></summary>
 
 > **Prerequisites**  
 > • Unix-like system  
@@ -40,7 +40,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
     sources_whitelist.txt → URLs of domain lists to exclude
     ```
 
-**4.** Configure Gist updates (optional):
+**4.** Configure Gist updates:
   - Set GitHub token and Gist variables in update scripts
   - Or comment out Gist update functions
 
@@ -57,18 +57,19 @@ chmod +x mikrotik-domain-filter-bash.sh update_gist.sh update_gist_special.sh
 ```
 
 **Output Files**  
-• `filtered_domains_mikrotik.txt`  
-• `filtered_domains_special_mikrotik.txt`  
-• `script.log`
+→ `filtered_domains_mikrotik.txt`  
+→ `filtered_domains_special_mikrotik.txt`  
+→ `script.log`
 
 **MikroTik Setup**  
 1. Import `dns-static-updater.rsc`  
-2. Configure DNS static records  
+2. Configure   
 3. Set up Mangle rules  
 
-⚠️ _Test thoroughly and monitor resources!_
+ⓘ _Test thoroughly and monitor resources!_
 
 </details>
+
 ---
 
 ### Table of Contents
