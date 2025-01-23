@@ -26,8 +26,6 @@ set -e
 # Path settings
 # Important: Verify that the following directory path is correct
 readonly WORK_DIR="/home/domain-filter-mikrotik"
-
-# Important: Ensure the file names below match the actual files in the directory
 readonly SOURCES_FILE="${WORK_DIR}/sources.txt"
 readonly SOURCESSPECIAL_FILE="${WORK_DIR}/sources_special.txt"
 readonly WHITELIST_FILE="${WORK_DIR}/sources_whitelist.txt"
@@ -173,7 +171,8 @@ cleanup() {
 
     # Clean old cache files
     if [[ -d "$CACHE_DIR" ]]; then
-        local cache_files_count; cache_files_count=$(find "$CACHE_DIR" -type f -name "*.cache" -mtime +90 -delete -print | wc -l)local cache_time=$(stat -c %Y "$cache_file")
+        local cache_files_count
+        cache_files_count=$(find "$CACHE_DIR" -type f -name "*.cache" -mtime +90 -delete -print | wc -l)
         if [[ $cache_files_count -gt 0 ]]; then
             log "Removed $cache_files_count outdated cache files"
         fi
@@ -199,11 +198,14 @@ check_domain() {
 
     # Check cache
     if [[ -f "$cache_file" ]]; then
-        local cache_time; cache_time=$(stat -c %Y "$cache_file")
-        local current_time; current_time=$(date +%s)
+        local cache_time
+        cache_time=$(stat -c %Y "$cache_file")
+        local current_time
+        current_time=$(date +%s)
         # Check if cache is older than 3 months
         if (( current_time - cache_time < 7776000 )); then
-            local cache_status; cache_status=$(cat "$cache_file")
+            local cache_status
+            cache_status=$(cat "$cache_file")
             [[ "$cache_status" == "valid" ]] && return 0 || return 1
         fi
     fi
@@ -247,7 +249,8 @@ check_domains_parallel() {
         return 1
     fi
 
-    local total; total=$(wc -l < "$input")
+    local total
+    total=$(wc -l < "$input")
     if [[ $total -eq 0 ]]; then
         log "WARNING: Input file $input is empty"
         return 1
@@ -307,7 +310,8 @@ check_domains_parallel() {
 
         if [[ -s "$temp_output" ]]; then
             mv "$temp_output" "$output"
-            local final_count; final_count=$(wc -l < "$output")
+            local final_count
+            final_count=$(wc -l < "$output")
             log "DNS check completed successfully. Valid domains: $final_count"
             return 0
         else
@@ -440,6 +444,7 @@ process_domains() {
     # Check that files are not empty after first pass
     if [[ ! -s "$base_domains" ]]; then
         log "WARNING: No base domains found in $input"
+        return 1
     fi
 
     # Second pass - filter subdomains
@@ -508,7 +513,8 @@ prepare_domains_for_dns_check() {
     cat "${input_dir}/second.txt" "${input_dir}/regional.txt" 2>/dev/null | \
     sort -u > "$output"
 
-    local total; total=$(wc -l < "$output")
+    local total
+    total=$(wc -l < "$output")
     log "Domains prepared for DNS check: $total"
 }
 
@@ -531,7 +537,8 @@ apply_whitelist() {
 
     # Process whitelist
     while IFS= read -r domain; do
-        local parts; mapfile -t parts <<< "${domain//./ }"
+        local parts
+        IFS='.' read -ra parts <<< "${domain//./ }"
         local levels=${#parts[@]}
         local base_domain
 
@@ -569,7 +576,8 @@ check_intersections() {
 
     log "Checking intersections between lists..."
 
-    local intersect; intersect=$(grep -Fx -f "$main_list" "$special_list")
+    local intersect
+    intersect=$(grep -Fx -f "$main_list" "$special_list")
     if [[ -n "$intersect" ]]; then
         log "WARNING: Intersections found between lists:"
         echo "$intersect" | while read -r domain; do
@@ -593,351 +601,356 @@ load_lists() {
     fi
 
     while read -r source; do
-        [[ -z "$source" || "$source" == "#"* ]] && continue
+      [[ -z "$source" || "$source" == "#"* ]] && continue
 
-        log "Loading from source: $source"
-        local response
-        response=$(curl -s --max-time 30 --retry 3 --retry-delay 2 "$source")
+      log "Loading from source: $source"
+      local response
+      response=$(curl -s --max-time 30 --retry 3 --retry-delay 2 "$source")
 
-        if [[ $? -eq 0 && -n "$response" ]]; then
-            echo "$response" | tr -s '[:space:]' '\n' >> "$output"
-        else
-            log "WARNING: Failed to load $source"
-        fi
-    done < "$sources"
+      if [[ $? -eq 0 && -n "$response" ]]; then
+          echo "$response" | tr -s '[:space:]' '\n' >> "$output"
+      else
+          log "WARNING: Failed to load $source"
+      fi
+  done < "$sources"
 }
 
 # Function to validate results
 validate_results() {
-    local main_list=$1
-    local special_list=$2
+  local main_list=$1
+  local special_list=$2
 
-    # Check for file existence
-    [[ ! -f "$main_list" ]] && return 1
-    [[ ! -f "$special_list" ]] && return 1
+  # Check for file existence
+  [[ ! -f "$main_list" ]] && return 1
+  [[ ! -f "$special_list" ]] && return 1
 
-    # Check file size
-    [[ ! -s "$main_list" ]] && return 1
-    [[ ! -s "$special_list" ]] && return 1
+  # Check file size
+  [[ ! -s "$main_list" ]] && return 1
+  [[ ! -s "$special_list" ]] && return 1
 
-    # Check content format
-    while read -r line; do
-        validate_domain "$line" || return 1
-    done < "$main_list"
+  # Check content format
+  while read -r line; do
+      validate_domain "$line" || return 1
+  done < "$main_list"
 
-    while read -r line; do
-        validate_domain "$line" || return 1
-    done < "$special_list"
+  while read -r line; do
+      validate_domain "$line" || return 1
+  done < "$special_list"
 
-    return 0
+  return 0
 }
 
 # Function to save results
 save_results() {
-    local main_list=$1
-    local special_list=$2
+  local main_list=$1
+  local special_list=$2
 
-    log "Starting to save results..."
+  log "Starting to save results..."
 
-    # Check for results existence
-    if [[ ! -s "$main_list" || ! -s "$special_list" ]]; then
-        log "ERROR: Empty results to save"
-        return 1
-    fi
+  # Check for results existence
+  if [[ ! -s "$main_list" || ! -s "$special_list" ]]; then
+      log "ERROR: Empty results to save"
+      return 1
+  fi
 
-    # Check write permissions for directories
-    local main_dir; main_dir=$(dirname "$main_list")
-    local special_dir; special_dir=$(dirname "$special_list")
+  # Check write permissions for directories
+  local main_dir
+  main_dir=$(dirname "$main_list")
+  local special_dir
+  special_dir=$(dirname "$special_list")
 
-    if [[ ! -w "$main_dir" || ! -w "$special_dir" || \
-          (-f "$main_list" && ! -w "$main_list") || \
-          (-f "$special_list" && ! -w "$special_list") ]]; then
-        log "ERROR: Insufficient permissions to write results"
-        return 1
-    fi
+  if [[ ! -w "$main_dir" || ! -w "$special_dir" || \
+        (-f "$main_list" && ! -w "$main_list") || \
+        (-f "$special_list" && ! -w "$special_list") ]]; then
+      log "ERROR: Insufficient permissions to write results"
+      return 1
+  fi
 
-    # Create temporary files with unique identifier
-    local timestamp; timestamp=$(date +%Y%m%d_%H%M%S)
-    local temp_main="${main_list}.${timestamp}.tmp"
-    local temp_special="${special_list}.${timestamp}.tmp"
+  # Create temporary files with unique identifier
+  local timestamp
+  timestamp=$(date +%Y%m%d_%H%M%S)
+  local temp_main="${main_list}.${timestamp}.tmp"
+  local temp_special="${special_list}.${timestamp}.tmp"
 
-    # Copy data to temporary files
-    if ! cp "$main_list" "$temp_main" || ! cp "$special_list" "$temp_special"; then
-        log "ERROR: Failed to create temporary files"
-        rm -f "$temp_main" "$temp_special"
-        return 1
-    fi
+  # Copy data to temporary files
+  if ! cp "$main_list" "$temp_main" || ! cp "$special_list" "$temp_special"; then
+      log "ERROR: Failed to create temporary files"
+      rm -f "$temp_main" "$temp_special"
+      return 1
+  fi
 
-    # Check temporary files content
-    local main_count; main_count=$(wc -l < "$temp_main")
-    local special_count; special_count=$(wc -l < "$temp_special")
+  # Check temporary files content
+  local main_count
+  main_count=$(wc -l < "$temp_main")
+  local special_count
+  special_count=$(wc -l < "$temp_special")
 
-    log "Prepared for saving: $main_count domains in main list, $special_count in special list"
+  log "Prepared for saving: $main_count domains in main list, $special_count in special list"
 
-    if [[ $main_count -eq 0 || $special_count -eq 0 ]]; then
-        log "ERROR: One of the lists is empty"
-        rm -f "$temp_main" "$temp_special"
-        return 1
-    fi
+  if [[ $main_count -eq 0 || $special_count -eq 0 ]]; then
+      log "ERROR: One of the lists is empty"
+      rm -f "$temp_main" "$temp_special"
+      return 1
+  fi
 
-    # Check validity of domains in temporary files
-    local invalid_domains=0
-    while IFS= read -r domain; do
-        if ! validate_domain "$domain"; then
-            log "ERROR: Invalid domain in main list: $domain"
-            ((invalid_domains++))
-        fi
-    done < "$temp_main"
+  # Check validity of domains in temporary files
+  local invalid_domains=0
+  while IFS= read -r domain; do
+      if ! validate_domain "$domain"; then
+          log "ERROR: Invalid domain in main list: $domain"
+          ((invalid_domains++))
+      fi
+  done < "$temp_main"
 
-    while IFS= read -r domain; do
-        if ! validate_domain "$domain"; then
-            log "ERROR: Invalid domain in special list: $domain"
-            ((invalid_domains++))
-        fi
-    done < "$temp_special"
+  while IFS= read -r domain; do
+      if ! validate_domain "$domain"; then
+          log "ERROR: Invalid domain in special list: $domain"
+          ((invalid_domains++))
+      fi
+  done < "$temp_special"
 
-    if [[ $invalid_domains -gt 0 ]]; then
-        log "ERROR: Found $invalid_domains invalid domains"
-        rm -f "$temp_main" "$temp_special"
-        return 1
-    fi
+  if [[ $invalid_domains -gt 0 ]]; then
+      log "ERROR: Found $invalid_domains invalid domains"
+      rm -f "$temp_main" "$temp_special"
+      return 1
+  fi
 
-    # Create backups of current files
-    local backup_main="${main_list}.backup"
-    local backup_special="${special_list}.backup"
+  # Create backups of current files
+  local backup_main="${main_list}.backup"
+  local backup_special="${special_list}.backup"
 
-    if [[ -f "$main_list" ]]; then
-        cp "$main_list" "$backup_main"
-    fi
-    if [[ -f "$special_list" ]]; then
-        cp "$special_list" "$backup_special"
-    fi
+  if [[ -f "$main_list" ]]; then
+      cp "$main_list" "$backup_main"
+  fi
+  if [[ -f "$special_list" ]]; then
+      cp "$special_list" "$backup_special"
+  fi
 
-    # Atomic update of files
-    if ! mv "$temp_main" "$main_list" || ! mv "$temp_special" "$special_list"; then
-        log "ERROR: Failed to update results files"
-        # Restore from backups if they exist
-        [[ -f "$backup_main" ]] && mv "$backup_main" "$main_list"
-        [[ -f "$backup_special" ]] && mv "$backup_special" "$special_list"
-        return 1
-    fi
+  # Atomic update of files
+  if ! mv "$temp_main" "$main_list" || ! mv "$temp_special" "$special_list"; then
+      log "ERROR: Failed to update results files"
+      # Restore from backups if they exist
+      [[ -f "$backup_main" ]] && mv "$backup_main" "$main_list"
+      [[ -f "$backup_special" ]] && mv "$backup_special" "$special_list"
+      return 1
+  fi
 
-    # Set access permissions
-    chmod 644 "$main_list" "$special_list"
+  # Set access permissions
+  chmod 644 "$main_list" "$special_list"
 
-    # Check final results
-    if [[ ! -s "$main_list" || ! -s "$special_list" ]]; then
-        log "ERROR: Problem saving results"
-        # Restore from backups
-        [[ -f "$backup_main" ]] && mv "$backup_main" "$main_list"
-        [[ -f "$backup_special" ]] && mv "$backup_special" "$special_list"
-        return 1
-    fi
+  # Check final results
+  if [[ ! -s "$main_list" || ! -s "$special_list" ]]; then
+      log "ERROR: Problem saving results"
+      # Restore from backups
+      [[ -f "$backup_main" ]] && mv "$backup_main" "$main_list"
+      [[ -f "$backup_special" ]] && mv "$backup_special" "$special_list"
+      return 1
+  fi
 
-    # Delete backups if successful
-    rm -f "$backup_main" "$backup_special"
+  # Delete backups if successful
+  rm -f "$backup_main" "$backup_special"
 
-    log "Results saved successfully"
-    log "Main list: $main_count domains"
-    log "Special list: $special_count domains"
+  log "Results saved successfully"
+  log "Main list: $main_count domains"
+  log "Special list: $special_count domains"
 
-    return 0
+  return 0
 }
 
 # Function to update gists
 update_gists() {
-    log "Starting gist update..."
+  log "Starting gist update..."
 
-    # Check and run main gist
-    if [[ -f "${WORK_DIR}/update_gist.sh" ]]; then
-        log "Running update_gist.sh..."
-        if bash "${WORK_DIR}/update_gist.sh"; then
-            log "update_gist.sh executed successfully"
-        else
-            log "ERROR: Failed to execute update_gist.sh"
-            return 1
-        fi
-    fi
+  # Check and run main gist
+  if [[ -f "${WORK_DIR}/update_gist.sh" ]]; then
+      log "Running update_gist.sh..."
+      if bash "${WORK_DIR}/update_gist.sh"; then
+          log "update_gist.sh executed successfully"
+      else
+          log "ERROR: Failed to execute update_gist.sh"
+          return 1
+      fi
+  fi
 
-    # Check and run special gist
-    if [[ -f "${WORK_DIR}/update_gist_special.sh" ]]; then
-        log "Running update_gist_special.sh..."
-        if bash "${WORK_DIR}/update_gist_special.sh"; then
-            log "update_gist_special.sh executed successfully"
-        else
-            log "ERROR: Failed to execute update_gist_special.sh"
-            return 1
-        fi
-    fi
+  # Check and run special gist
+  if [[ -f "${WORK_DIR}/update_gist_special.sh" ]]; then
+      log "Running update_gist_special.sh..."
+      if bash "${WORK_DIR}/update_gist_special.sh"; then
+          log "update_gist_special.sh executed successfully"
+      else
+          log "ERROR: Failed to execute update_gist_special.sh"
+          return 1
+      fi
+  fi
 
-    return 0
+  return 0
 }
 
 # Function to check if update is needed
 check_updates_needed() {
-    local main_md5="${TMP_DIR}/main.md5"
-    local special_md5="${TMP_DIR}/special.md5"
-    local white_md5="${TMP_DIR}/white.md5"
+  local main_md5="${TMP_DIR}/main.md5"
+  local special_md5="${TMP_DIR}/special.md5"
+  local white_md5="${TMP_DIR}/white.md5"
 
-    # Save current MD5
-    md5sum "$SOURCES_FILE" > "$main_md5"
-    md5sum "$SOURCESSPECIAL_FILE" > "$special_md5"
-    [[ -f "$WHITELIST_FILE" ]] && md5sum "$WHITELIST_FILE" > "$white_md5"
+  # Save current MD5
+  md5sum "$SOURCES_FILE" > "$main_md5"
+  md5sum "$SOURCESSPECIAL_FILE" > "$special_md5"
+  [[ -f "$WHITELIST_FILE" ]] && md5sum "$WHITELIST_FILE" > "$white_md5"
 
-    # Check for changes
-    if [[ -f "${main_md5}.old" ]] && \
-       diff -q "$main_md5" "${main_md5}.old" >/dev/null && \
-       diff -q "$special_md5" "${special_md5}.old" >/dev/null && \
-       { [[ ! -f "$WHITELIST_FILE" ]] || diff -q "$white_md5" "${white_md5}.old" >/dev/null; }; then
-        return 1
-    fi
+  # Check for changes
+  if [[ -f "${main_md5}.old" ]] && \
+     diff -q "$main_md5" "${main_md5}.old" >/dev/null && \
+     diff -q "$special_md5" "${special_md5}.old" >/dev/null && \
+     { [[ ! -f "$WHITELIST_FILE" ]] || diff -q "$white_md5" "${white_md5}.old" >/dev/null; }; then
+      return 1
+  fi
 
-    # Update old MD5
-    mv "$main_md5" "${main_md5}.old"
-    mv "$special_md5" "${special_md5}.old"
-    [[ -f "$white_md5" ]] && mv "$white_md5" "${white_md5}.old"
+  # Update old MD5
+  mv "$main_md5" "${main_md5}.old"
+  mv "$special_md5" "${special_md5}.old"
+  [[ -f "$white_md5" ]] && mv "$white_md5" "${white_md5}.old"
 
-    return 0
+  return 0
 }
 
 # Helper function to restore backups
 restore_backups() {
-    log "Restoring backups..."
-    [[ -f "${OUTPUT_FILE}.bak" ]] && mv "${OUTPUT_FILE}.bak" "$OUTPUT_FILE"
-    [[ -f "${OUTPUT_FILESPECIAL}.bak" ]] && mv "${OUTPUT_FILESPECIAL}.bak" "$OUTPUT_FILESPECIAL"
+  log "Restoring backups..."
+  [[ -f "${OUTPUT_FILE}.bak" ]] && mv "${OUTPUT_FILE}.bak" "$OUTPUT_FILE"
+  [[ -f "${OUTPUT_FILESPECIAL}.bak" ]] && mv "${OUTPUT_FILESPECIAL}.bak" "$OUTPUT_FILESPECIAL"
 }
 
 # Main function
 main() {
 
-  log "Script started..."
+log "Script started..."
 
-  # Check required files
-  check_required_files
-  # Initialization
-  init_directories
-  check_dependencies || error "Missing required dependencies"
-  acquire_lock
-  load_public_suffix_list
+# Check required files
+check_required_files
+# Initialization
+init_directories
+check_dependencies || error "Missing required dependencies"
+acquire_lock
+load_public_suffix_list
 
-  log "Starting main processing..."
+log "Starting main processing..."
 
-    # Check if update is needed
-    if ! check_updates_needed; then
-        log "Lists have not changed. Skipping processing."
-        release_lock
-        exit 0
-    fi
+  # Check if update is needed
+  if ! check_updates_needed; then
+      log "Lists have not changed. Skipping processing."
+      release_lock
+      exit 0
+  fi
 
-    # Clean temporary files
-    cleanup
+  # Clean temporary files
+  cleanup
 
-    # Load lists
-    local main_raw="${TMP_DIR}/main_raw.txt"
-    local special_raw="${TMP_DIR}/special_raw.txt"
-    local whitelist_raw="${TMP_DIR}/whitelist_raw.txt"
+  # Load lists
+  local main_raw="${TMP_DIR}/main_raw.txt"
+  local special_raw="${TMP_DIR}/special_raw.txt"
+  local whitelist_raw="${TMP_DIR}/whitelist_raw.txt"
 
-    log "Loading lists..."
-    load_lists "$SOURCES_FILE" "$main_raw"
-    load_lists "$SOURCESSPECIAL_FILE" "$special_raw"
-    [[ -f "$WHITELIST_FILE" ]] && load_lists "$WHITELIST_FILE" "$whitelist_raw"
+  log "Loading lists..."
+  load_lists "$SOURCES_FILE" "$main_raw"
+  load_lists "$SOURCESSPECIAL_FILE" "$special_raw"
+  [[ -f "$WHITELIST_FILE" ]] && load_lists "$WHITELIST_FILE" "$whitelist_raw"
 
-    # Create backups of current files
-    if [[ -f "$OUTPUT_FILE" ]]; then
-        cp "$OUTPUT_FILE" "${OUTPUT_FILE}.bak"
-        log "Backup of main list created"
-    fi
-    if [[ -f "$OUTPUT_FILESPECIAL" ]]; then
-        cp "$OUTPUT_FILESPECIAL" "${OUTPUT_FILESPECIAL}.bak"
-        log "Backup of special list created"
-    fi
+  # Create backups of current files
+  if [[ -f "$OUTPUT_FILE" ]]; then
+      cp "$OUTPUT_FILE" "${OUTPUT_FILE}.bak"
+      log "Backup of main list created"
+  fi
+  if [[ -f "$OUTPUT_FILESPECIAL" ]]; then
+      cp "$OUTPUT_FILESPECIAL" "${OUTPUT_FILESPECIAL}.bak"
+      log "Backup of special list created"
+  fi
 
-    # Process main list
-    log "Processing main list..."
-    initial_filter "$main_raw" "${TMP_DIR}/main_initial.txt"
-    if ! process_domains "${TMP_DIR}/main_initial.txt" "${TMP_DIR}/main"; then
-        log "ERROR: Failed to process main domain list"
-        restore_backups
-        exit 1
-    fi
-    prepare_domains_for_dns_check "${TMP_DIR}/main" "${TMP_DIR}/main_filtered.txt"
+  # Process main list
+  log "Processing main list..."
+  initial_filter "$main_raw" "${TMP_DIR}/main_initial.txt"
+  if ! process_domains "${TMP_DIR}/main_initial.txt" "${TMP_DIR}/main"; then
+      log "ERROR: Failed to process main domain list"
+      restore_backups
+      exit 1
+  fi
+  prepare_domains_for_dns_check "${TMP_DIR}/main" "${TMP_DIR}/main_filtered.txt"
 
-    # Process special list
-    log "Processing special list..."
-    initial_filter "$special_raw" "${TMP_DIR}/special_initial.txt"
-    if ! process_domains "${TMP_DIR}/special_initial.txt" "${TMP_DIR}/special"; then
-        log "ERROR: Failed to process special domain list"
-        restore_backups
-        exit 1
-    fi
-    prepare_domains_for_dns_check "${TMP_DIR}/special" "${TMP_DIR}/special_filtered.txt"
+  # Process special list
+  log "Processing special list..."
+  initial_filter "$special_raw" "${TMP_DIR}/special_initial.txt"
+  if ! process_domains "${TMP_DIR}/special_initial.txt" "${TMP_DIR}/special"; then
+      log "ERROR: Failed to process special domain list"
+      restore_backups
+      exit 1
+  fi
+  prepare_domains_for_dns_check "${TMP_DIR}/special" "${TMP_DIR}/special_filtered.txt"
 
-    # Apply whitelist if exists
-    if [[ -f "$whitelist_raw" ]]; then
-        log "Applying whitelist..."
-        initial_filter "$whitelist_raw" "${TMP_DIR}/whitelist.txt"
-        apply_whitelist "${TMP_DIR}/main_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/main_filtered_clean.txt"
-        apply_whitelist "${TMP_DIR}/special_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/special_filtered_clean.txt"
-        mv "${TMP_DIR}/main_filtered_clean.txt" "${TMP_DIR}/main_filtered.txt"
-        mv "${TMP_DIR}/special_filtered_clean.txt" "${TMP_DIR}/special_filtered.txt"
-    fi
+  # Apply whitelist if exists
+  if [[ -f "$whitelist_raw" ]]; then
+      log "Applying whitelist..."
+      initial_filter "$whitelist_raw" "${TMP_DIR}/whitelist.txt"
+      apply_whitelist "${TMP_DIR}/main_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/main_filtered_clean.txt"
+      apply_whitelist "${TMP_DIR}/special_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/special_filtered_clean.txt"
+      mv "${TMP_DIR}/main_filtered_clean.txt" "${TMP_DIR}/main_filtered.txt"
+      mv "${TMP_DIR}/special_filtered_clean.txt" "${TMP_DIR}/special_filtered.txt"
+  fi
 
-    # Check for intersections
-    if ! check_intersections "${TMP_DIR}/main_filtered.txt" "${TMP_DIR}/special_filtered.txt"; then
-        log "ERROR: Intersections found between lists"
-        restore_backups
-        exit 1
-    fi
+  # Check for intersections
+  if ! check_intersections "${TMP_DIR}/main_filtered.txt" "${TMP_DIR}/special_filtered.txt"; then
+      log "ERROR: Intersections found between lists"
+      restore_backups
+      exit 1
+  fi
 
-    # DNS checks
-    log "Performing DNS checks..."
-    if ! check_domains_parallel "${TMP_DIR}/main_filtered.txt" "$OUTPUT_FILE" || \
-       ! check_domains_parallel "${TMP_DIR}/special_filtered.txt" "$OUTPUT_FILESPECIAL"; then
-        log "ERROR: Error during DNS checks"
-        restore_backups
-        exit 1
-    fi
+  # DNS checks
+  log "Performing DNS checks..."
+  if ! check_domains_parallel "${TMP_DIR}/main_filtered.txt" "$OUTPUT_FILE" || \
+     ! check_domains_parallel "${TMP_DIR}/special_filtered.txt" "$OUTPUT_FILESPECIAL"; then
+      log "ERROR: Error during DNS checks"
+      restore_backups
+      exit 1
+  fi
 
-    # Validate results
-    if ! validate_results "$OUTPUT_FILE" "$OUTPUT_FILESPECIAL"; then
-        log "ERROR: Results failed validation"
-        restore_backups
-        exit 1
-    fi
+  # Validate results
+  if ! validate_results "$OUTPUT_FILE" "$OUTPUT_FILESPECIAL"; then
+      log "ERROR: Results failed validation"
+      restore_backups
+      exit 1
+  fi
 
-    # Save results
-    if ! save_results "$OUTPUT_FILE" "$OUTPUT_FILESPECIAL"; then
-        log "ERROR: Failed to save results"
-        restore_backups
-        exit 1
-    fi
+  # Save results
+  if ! save_results "$OUTPUT_FILE" "$OUTPUT_FILESPECIAL"; then
+      log "ERROR: Failed to save results"
+      restore_backups
+      exit 1
+  fi
 
-    # Update gists only if valid results exist
-    if [[ -s "$OUTPUT_FILE" ]] && [[ -s "$OUTPUT_FILESPECIAL" ]]; then
-        if ! update_gists; then
-            log "ERROR: Failed to update gists"
-            exit 1
-        fi
-    else
-        log "ERROR: Empty results, skipping gist update"
-        restore_backups
-        exit 1
-    fi
+  # Update gists only if valid results exist
+  if [[ -s "$OUTPUT_FILE" ]] && [[ -s "$OUTPUT_FILESPECIAL" ]]; then
+      if ! update_gists; then
+          log "ERROR: Failed to update gists"
+          exit 1
+      fi
+  else
+      log "ERROR: Empty results, skipping gist update"
+      restore_backups
+      exit 1
+  fi
 
-    # Clean temporary files and backups
-    cleanup
-    rm -f "${OUTPUT_FILE}.bak" "${OUTPUT_FILESPECIAL}.bak"
+  # Clean temporary files and backups
+  cleanup
+  rm -f "${OUTPUT_FILE}.bak" "${OUTPUT_FILESPECIAL}.bak"
 
-    log "Processing completed successfully"
-    log "Main list: $(wc -l < "$OUTPUT_FILE") domains"
-    log "Special list: $(wc -l < "$OUTPUT_FILESPECIAL") domains"
+  log "Processing completed successfully"
+  log "Main list: $(wc -l < "$OUTPUT_FILE") domains"
+  log "Special list: $(wc -l < "$OUTPUT_FILESPECIAL") domains"
 
-    release_lock
+  release_lock
 }
 
 {
-    main "$@"
-    exit 0  # Explicitly indicate successful completion
+  main "$@"
+  exit 0  # Explicitly indicate successful completion
 } || {
-    error "Script terminated with error (code: $?)"
+  error "Script terminated with error (code: $?)"
 }
