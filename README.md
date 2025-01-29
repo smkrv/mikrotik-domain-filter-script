@@ -27,7 +27,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 > **Setup Steps**  
 > 1. Create a working directory  
 > 2. Copy script:  
->    - [mikrotik-domain-filter-bash.sh](/scripts/mikrotik-domain-filter-bash.sh) 
+>    - [mikrotik-domain-filter-bash.sh](/scripts/mikrotik-domain-filter-bash.sh)  
 >  
 > 3. Configure scripts:  
 >    - Set working directory path in `mikrotik-domain-filter-bash.sh`  
