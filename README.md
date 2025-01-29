@@ -45,7 +45,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 >      GIST_ID_SPECIAL="your_special_gist_id"
 >      ```
 >    - Set `EXPORT_GISTS=true` to enable Gist updates
->    - Set `GITHUB_TOKEN` with your GitHub Personal Access Token
+>    - Set `GITHUB_TOKEN` with your [GitHub Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
 >    - Set `GIST_ID_MAIN` and `GIST_ID_SPECIAL` with respective Gist IDs
 >  
 > 5. Add download URLs to source files  
