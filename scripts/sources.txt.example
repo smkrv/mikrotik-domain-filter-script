@@ -1,0 +1,3 @@
+# Example sources
+# This blocklist helps to restrict access to Google and its domains. Contribute at https://github.com/nickspaargaren/no-google
+https://raw.githubusercontent.com/nickspaargaren/no-google/master/categories/youtubeparsed
