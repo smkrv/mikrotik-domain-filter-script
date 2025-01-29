@@ -43,6 +43,26 @@ readonly CACHE_DIR="${WORK_DIR}/cache"
 readonly OUTPUT_FILE="${WORK_DIR}/filtered_domains_mikrotik.txt"
 readonly OUTPUT_FILESPECIAL="${WORK_DIR}/filtered_domains_special_mikrotik.txt"
 
+# Load environment variables from .env file if it exists
+if [[ -f "${WORK_DIR}/.env" ]]; then
+    # shellcheck disable=SC1090
+    while IFS='=' read -r key value; do
+        # Skip comments and empty lines
+        [[ $key =~ ^#.*$ ]] && continue
+        [[ -z "$key" ]] && continue
+        # Remove quotes and export variable
+        value="${value%\"}"
+        value="${value#\"}"
+        export "$key=$value"
+    done < "${WORK_DIR}/.env"
+fi
+
+# GitHub Gist settings !Use env var if available
+readonly EXPORT_GISTS=${EXPORT_GISTS:-false}  # Default to false if not set
+readonly GITHUB_TOKEN=${GITHUB_TOKEN:-""}     # GitHub access token
+readonly GIST_ID_MAIN=${GIST_ID_MAIN:-""}     # Gist ID for main list
+readonly GIST_ID_SPECIAL=${GIST_ID_SPECIAL:-""} # Gist ID for special list
+
 # Performance settings
 readonly MAX_PARALLEL_JOBS=5
 readonly DNS_RATE_LIMIT=5
@@ -181,7 +201,7 @@ cleanup() {
 
 # Function to check dependencies
 check_dependencies() {
-    local deps=(curl grep awk sort parallel)
+    local deps=(curl jq awk grep parallel)
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             error "Required dependency: $dep"
@@ -759,31 +779,71 @@ save_results() {
 
 # Function to update gists
 update_gists() {
-  log "Starting gist update..."
+    [[ "$EXPORT_GISTS" != "true" ]] && return 0
 
-  # Check and run main gist
-  if [[ -f "${WORK_DIR}/update_gist.sh" ]]; then
-      log "Running update_gist.sh..."
-      if bash "${WORK_DIR}/update_gist.sh"; then
-          log "update_gist.sh executed successfully"
-      else
-          log "ERROR: Failed to execute update_gist.sh"
-          return 1
-      fi
-  fi
+    log "Starting gist update..."
 
-  # Check and run special gist
-  if [[ -f "${WORK_DIR}/update_gist_special.sh" ]]; then
-      log "Running update_gist_special.sh..."
-      if bash "${WORK_DIR}/update_gist_special.sh"; then
-          log "update_gist_special.sh executed successfully"
-      else
-          log "ERROR: Failed to execute update_gist_special.sh"
-          return 1
-      fi
-  fi
+    # Check requirements
+    command -v curl >/dev/null 2>&1 || { log "ERROR: curl is required"; return 1; }
+    command -v jq >/dev/null 2>&1 || { log "ERROR: jq is required"; return 1; }
 
-  return 0
+    [[ -z "$GITHUB_TOKEN" ]] && { log "ERROR: GITHUB_TOKEN is not set"; return 1; }
+
+    # Update main list
+    if [[ -n "$GIST_ID_MAIN" && -f "$OUTPUT_FILE" ]]; then
+        log "Updating main list gist..."
+        local content
+        content=$(cat "$OUTPUT_FILE")
+
+        local response
+        response=$(curl -s -X PATCH \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "{
+                \"files\": {
+                    \"$(basename "$OUTPUT_FILE")\": {
+                        \"content\": $(echo "$content" | jq -R -s .)
+                    }
+                }
+            }" \
+            "https://api.github.com/gists/$GIST_ID_MAIN")
+
+        if echo "$response" | jq -e '.id' > /dev/null; then
+            log "✅ Main list gist updated successfully"
+        else
+            log "❌ Error updating main list gist"
+            return 1
+        fi
+    fi
+
+    # Update special list
+    if [[ -n "$GIST_ID_SPECIAL" && -f "$OUTPUT_FILESPECIAL" ]]; then
+        log "Updating special list gist..."
+        local content
+        content=$(cat "$OUTPUT_FILESPECIAL")
+
+        local response
+        response=$(curl -s -X PATCH \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "{
+                \"files\": {
+                    \"$(basename "$OUTPUT_FILESPECIAL")\": {
+                        \"content\": $(echo "$content" | jq -R -s .)
+                    }
+                }
+            }" \
+            "https://api.github.com/gists/$GIST_ID_SPECIAL")
+
+        if echo "$response" | jq -e '.id' > /dev/null; then
+            log "✅ Special list gist updated successfully"
+        else
+            log "❌ Error updating special list gist"
+            return 1
+        fi
+    fi
+
+    return 0
 }
 
 # Function to check if update is needed
