@@ -22,14 +22,12 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 
 >  **Prerequisites**
 > - Unix-like system  
-> - Install dependencies: `sudo apt-get install curl jq gawk grep parallel`  
+> - Install dependencies: `sudo apt-get install curl jq awk grep parallel`  
 >  
 > **Setup Steps**  
 > 1. Create a working directory  
-> 2. Copy scripts:  
+> 2. Copy script:  
 >    - `mikrotik-domain-filter-bash.sh`  
->    - `update_gist.sh`  
->    - `update_gist_special.sh`  
 >  
 > 3. Configure scripts:  
 >    - Set working directory path in `mikrotik-domain-filter-bash.sh`  
@@ -38,15 +36,23 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 >      * `sources_special.txt`: Special domain list URLs  
 >      * `sources_whitelist.txt`: URLs of domain lists to exclude  
 >  
-> 4. Configure Gist updates (optional):  
->    - Set GitHub token and Gist variables in `update_gist.sh` and `update_gist_special.sh`  
->    - Or comment out Gist update functions in main script  
+> 4. Configure Gist updates (optional):
+>    - Create a `.env` file in the working directory with the following variables:
+>      ```env
+>      EXPORT_GISTS=true
+>      GITHUB_TOKEN="your_github_personal_access_token"
+>      GIST_ID_MAIN="your_main_gist_id"
+>      GIST_ID_SPECIAL="your_special_gist_id"
+>      ```
+>    - Set `EXPORT_GISTS=true` to enable Gist updates
+>    - Set `GITHUB_TOKEN` with your GitHub Personal Access Token
+>    - Set `GIST_ID_MAIN` and `GIST_ID_SPECIAL` with respective Gist IDs
 >  
 > 5. Add download URLs to source files  
 >  
 > 6. Set execution permissions:  
 >    ```bash  
->    chmod +x mikrotik-domain-filter-bash.sh update_gist.sh update_gist_special.sh  
+>    chmod +x mikrotik-domain-filter-bash.sh  
 >    ```  
 >  
 > 7. Run the main script:  
@@ -81,7 +87,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 8. [Pipeline Summary](#pipeline-summary)
 9. [File Descriptions](#file-descriptions)
 10. [Detailed Description of Domain Processing in Downloaded Lists](#detailed-description-of-domain-processing-in-downloaded-lists)
-11. [GitHub Gist Update Scripts](#github-gist-update-scripts)
+11. [GitHub Gist Exports](#github-gist-exports)
 12. [Project Structure](#project-structure)
 13. [Installation and Setup](#installation-and-setup)
 14. [Running the Script](#running-the-script)
@@ -100,7 +106,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 - **Logging**: A logging mechanism is set up to record events and errors in a log file.
 - **Lock Mechanism**: A file lock is used to ensure that only one instance of the script runs at a time, preventing conflicts.
 - **Directory Initialization**: Required directories are checked and created if they don’t exist.
-- **Dependency Check**: The script verifies the presence of required system tools like `curl`, `grep`, `awk`, `sort`, and `parallel`.
+- **Dependency Check**: The script verifies the presence of required system tools like `curl`, `jq`, `grep`, `awk`, `sort`, and `parallel`.
 
 ### File Checks and Cleanup
 
@@ -442,45 +448,37 @@ tiktok.com
 youtube.co.uk
 ```
 
-### GitHub Gist Update Scripts
+### GitHub Gist Exports
 
-This repository contains two identical shell scripts ([update_gist_special.sh](/update_gist_special.sh) and [update_gist.sh](/update_gist.sh)) that update different GitHub Gists with local file content. The scripts share the same functionality but use different variables and target different Gists.
+Configuration is currently done through environment variables, which can be set in a [.env](/.env.example) file:
 
-#### Scripts Overview
+```env
+# Enable or disable Gist updates
+EXPORT_GISTS=true
 
-Both scripts perform the same operations but are configured for different Gists:
-- `update_gist_special.sh` - configured for one specific Gist
-- `update_gist.sh` - configured for another Gist
+# GitHub Personal Access Token
+GITHUB_TOKEN="your_github_token"
 
-The only difference between these scripts is in their configuration variables (GitHub token, Gist ID, file names, and paths).
-
-#### Technical Details
-
-The scripts require:
-- `curl` for making API requests
-- `jq` for JSON processing
-
-Each script performs the following operations:
-1. Validates the presence of required utilities
-2. Reads the content from a specified local file
-3. Updates the target Gist via GitHub API
-4. Verifies the update was successful
-
-#### Usage
-
-To use either script, you need to configure the following variables:
-```bash
-GITHUB_TOKEN="your-github-token"
-GIST_ID="your-gist-id"
-FILENAME="filename-in-gist"
-LOCAL_FILE_PATH="path/to/local/file"
+# Gist IDs for main and special lists
+GIST_ID_MAIN="your_main_gist_id"
+GIST_ID_SPECIAL="your_special_gist_id"
 ```
 
-After configuring the variables, you can run either script to update its corresponding Gist with the content from the specified local file.
+#### Key Features
+- Direct GitHub API integration
+- Support for environment variables
+- Configurable Gist updates
+- Improved error handling
+- Detailed logging
 
-#### Note
+#### Requirements
+- `curl` for API requests
+- `jq` for JSON processing
 
-While the scripts are identical in functionality, they are maintained as separate files to avoid the need for changing variables when updating different Gists. This approach allows for easier automation and maintenance of multiple Gist updates.
+#### Notes
+- The `.env` file provides a secure way to manage sensitive tokens
+- Environment variables can also be set directly in the shell
+- Set `EXPORT_GISTS=false` to disable Gist updates
 
 ---
 
@@ -490,8 +488,7 @@ While the scripts are identical in functionality, they are maintained as separat
 ...
 ├── dns-static-updater.rsc      # MikroTik RouterOS script for DNS Static records import
 ├── mikrotik-domain-filter-bash.sh    # Main domain filtering script
-├── update_gist.sh             # Script for updating main list Gist
-└── update_gist_special.sh     # Script for updating special list Gist
+└── .env                             # Optional environment configuration file
 ```
 
 ### Installation and Setup
@@ -514,21 +511,19 @@ While the scripts are identical in functionality, they are maintained as separat
    ```bash
    # You might need sudo rights to change file permissions  
    sudo chmod +x mikrotik-domain-filter-bash.sh  
-   sudo chmod +x update_gist.sh        # If using Gist updates  
-   sudo chmod +x update_gist_special.sh # If using special Gist updates  
 
    # Or if you own the files:  
    chmod +x mikrotik-domain-filter-bash.sh  
-   chmod +x update_gist.sh        # If using Gist updates  
-   chmod +x update_gist_special.sh # If using special Gist updates
    ```
 
 3. **Configure Log Rotation**
    - Set up proper log rotation to manage script logs
    - Ensure sufficient disk space for logs
 
-4. **Gist Updates (Optional)**
-   - If you don't plan to use Gist updates, comment out the calls to `update_gist.sh` and `update_gist_special.sh` in `mikrotik-domain-filter-bash.sh`
+4. **Configure Gist Updates (Optional)**
+  - Create a `.env` file in the working directory
+  - Add GitHub Gist configuration variables
+  - Ensure `.env` file is not tracked by version control
 
 #### Running the Script
 
@@ -559,7 +554,7 @@ The script requires several system utilities and proper permissions to function 
 For Ubuntu/Debian systems:  
 ```bash  
 sudo apt-get update  
-sudo apt-get install curl jq gawk grep parallel
+sudo apt-get install curl jq awk grep parallel
 ```
 
 ---
