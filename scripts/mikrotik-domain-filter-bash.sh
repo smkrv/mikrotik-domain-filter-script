@@ -369,6 +369,39 @@ validate_domain() {
 }
 export -f validate_domain
 
+# Function to extract domains from various formats
+extract_domains() {
+    local input=$1
+    local output=$2
+
+    log "Extracting domains from various formats..."
+
+    # Create temporary file
+    local temp_file="${TMP_DIR}/extracted_domains.tmp"
+    : > "$temp_file"
+
+    while IFS= read -r line; do
+        # Skip empty lines and comments
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+        # Extract domain from different formats
+        if [[ "$line" =~ ^(DOMAIN-SUFFIX|DOMAIN|DOMAIN-KEYWORD),(.+)$ ]]; then
+            echo "${BASH_REMATCH[2]}" >> "$temp_file"
+        elif [[ "$line" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$ ]]; then
+            echo "$line" >> "$temp_file"
+        fi
+    done < "$input"
+
+    # Sort and remove duplicates
+    sort -u "$temp_file" > "$output"
+    rm -f "$temp_file"
+
+    local count
+    count=$(wc -l < "$output")
+    log "Extracted $count unique domains"
+}
+
+
 # Function for initial filtering
 initial_filter() {
     local input=$1
@@ -848,29 +881,110 @@ update_gists() {
 
 # Function to check if update is needed
 check_updates_needed() {
-  local main_md5="${TMP_DIR}/main.md5"
-  local special_md5="${TMP_DIR}/special.md5"
-  local white_md5="${TMP_DIR}/white.md5"
+    local temp_dir="${TMP_DIR}/downloads"
+    local current_md5="${temp_dir}/current_md5"
+    local previous_md5="${temp_dir}/previous_md5"
+    local update_needed=false
 
-  # Save current MD5
-  md5sum "$SOURCES_FILE" > "$main_md5"
-  md5sum "$SOURCESSPECIAL_FILE" > "$special_md5"
-  [[ -f "$WHITELIST_FILE" ]] && md5sum "$WHITELIST_FILE" > "$white_md5"
+    log "Checking for updates..."
+    mkdir -p "$temp_dir"
+    : > "$current_md5"
 
-  # Check for changes
-  if [[ -f "${main_md5}.old" ]] && \
-     diff -q "$main_md5" "${main_md5}.old" >/dev/null && \
-     diff -q "$special_md5" "${special_md5}.old" >/dev/null && \
-     { [[ ! -f "$WHITELIST_FILE" ]] || diff -q "$white_md5" "${white_md5}.old" >/dev/null; }; then
-      return 1
-  fi
+    # Function to download and check content from a single source
+    download_and_check() {
+        local source=$1
+        local temp_file="${temp_dir}/$(echo "$source" | md5sum | cut -d' ' -f1)"
 
-  # Update old MD5
-  mv "$main_md5" "${main_md5}.old"
-  mv "$special_md5" "${special_md5}.old"
-  [[ -f "$white_md5" ]] && mv "$white_md5" "${white_md5}.old"
+        log "Downloading: $source"
+        if curl -sSL --max-time 30 --retry 3 --retry-delay 2 "$source" -o "$temp_file"; then
+            if [[ -s "$temp_file" ]]; then
+                local md5_sum
+                md5_sum=$(md5sum "$temp_file" | cut -d' ' -f1)
+                echo "${source} ${md5_sum}" >> "$current_md5"
+                return 0
+            fi
+        fi
+        log "WARNING: Failed to download $source"
+        return 1
+    }
 
-  return 0
+    # Process all sources and calculate MD5
+    local process_failed=false
+
+    # Process main sources
+    if [[ -f "$SOURCES_FILE" ]]; then
+        log "Processing main sources..."
+        while IFS= read -r source; do
+            [[ -z "$source" || "$source" == "#"* ]] && continue
+            download_and_check "$source" || process_failed=true
+        done < "$SOURCES_FILE"
+    fi
+
+    # Process special sources
+    if [[ -f "$SOURCESSPECIAL_FILE" ]]; then
+        log "Processing special sources..."
+        while IFS= read -r source; do
+            [[ -z "$source" || "$source" == "#"* ]] && continue
+            download_and_check "$source" || process_failed=true
+        done < "$SOURCESSPECIAL_FILE"
+    fi
+
+    # Process whitelist
+    if [[ -f "$WHITELIST_FILE" ]]; then
+        log "Processing whitelist..."
+        while IFS= read -r source; do
+            [[ -z "$source" || "$source" == "#"* ]] && continue
+            download_and_check "$source" || process_failed=true
+        done < "$WHITELIST_FILE"
+    fi
+
+    # Check if we failed to process any sources
+    if $process_failed; then
+        log "ERROR: Failed to process one or more sources"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Debug output for current MD5 sums
+    log "Current MD5 sums:"
+    while IFS= read -r line; do
+        log "  $line"
+    done < "$current_md5"
+
+    # Compare current and previous MD5
+    if [[ -f "$previous_md5" ]]; then
+        log "Previous MD5 sums:"
+        while IFS= read -r line; do
+            log "  $line"
+        done < "$previous_md5"
+
+        if ! diff -q "$current_md5" "$previous_md5" >/dev/null 2>&1; then
+            update_needed=true
+            log "Changes detected in source content"
+            # Show what changed
+            log "Changes:"
+            diff "$previous_md5" "$current_md5" | while IFS= read -r line; do
+                log "  $line"
+            done
+        fi
+    else
+        update_needed=true
+        log "No previous MD5 found, update needed"
+    fi
+
+    if $update_needed; then
+        # Save current MD5 as previous for next run
+        cp "$current_md5" "$previous_md5"
+        log "MD5 checksums updated"
+    else
+        log "No changes detected in sources"
+    fi
+
+    # Don't remove temp_dir immediately to preserve MD5 files for next run
+    # Only remove downloaded content
+    find "$temp_dir" -type f ! -name "*md5" -delete
+
+    return $([ "$update_needed" = true ] && echo 0 || echo 1)
 }
 
 # Helper function to restore backups
@@ -927,6 +1041,7 @@ log "Starting main processing..."
 
   # Process main list
   log "Processing main list..."
+  extract_domains "$main_raw" "${TMP_DIR}/main_extracted.txt"
   initial_filter "$main_raw" "${TMP_DIR}/main_initial.txt"
   if ! process_domains "${TMP_DIR}/main_initial.txt" "${TMP_DIR}/main"; then
       log "ERROR: Failed to process main domain list"
@@ -937,6 +1052,7 @@ log "Starting main processing..."
 
   # Process special list
   log "Processing special list..."
+  extract_domains "$special_raw" "${TMP_DIR}/special_extracted.txt"
   initial_filter "$special_raw" "${TMP_DIR}/special_initial.txt"
   if ! process_domains "${TMP_DIR}/special_initial.txt" "${TMP_DIR}/special"; then
       log "ERROR: Failed to process special domain list"
@@ -948,6 +1064,7 @@ log "Starting main processing..."
   # Apply whitelist if exists
   if [[ -f "$whitelist_raw" ]]; then
       log "Applying whitelist..."
+      extract_domains "$whitelist_raw" "${TMP_DIR}/whitelist_extracted.txt"
       initial_filter "$whitelist_raw" "${TMP_DIR}/whitelist.txt"
       apply_whitelist "${TMP_DIR}/main_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/main_filtered_clean.txt"
       apply_whitelist "${TMP_DIR}/special_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/special_filtered_clean.txt"
