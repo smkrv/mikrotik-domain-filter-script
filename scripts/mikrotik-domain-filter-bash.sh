@@ -893,7 +893,8 @@ check_updates_needed() {
     # Function to download and check content from a single source
     download_and_check() {
         local source=$1
-        local temp_file="${temp_dir}/$(echo "$source" | md5sum | cut -d' ' -f1)"
+        local temp_file
+        temp_file="${temp_dir}/$(echo "$source" | md5sum | cut -d' ' -f1)"
 
         log "Downloading: $source"
         if curl -sSL --max-time 30 --retry 3 --retry-delay 2 "$source" -o "$temp_file"; then
@@ -984,7 +985,7 @@ check_updates_needed() {
     # Only remove downloaded content
     find "$temp_dir" -type f ! -name "*md5" -delete
 
-    return $([ "$update_needed" = true ] && echo 0 || echo 1)
+    return "$([ "$update_needed" = true ] && echo 0 || echo 1)"
 }
 
 # Helper function to restore backups
