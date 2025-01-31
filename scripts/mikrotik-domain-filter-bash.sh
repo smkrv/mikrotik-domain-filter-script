@@ -385,8 +385,8 @@ extract_domains() {
         [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 
         # Extract domain from different formats
-        if [[ "$line" =~ ^(DOMAIN-SUFFIX|DOMAIN|DOMAIN-KEYWORD),(.+)$ ]]; then
-            echo "${BASH_REMATCH[2]}" >> "$temp_file"
+        if [[ "$line" =~ ^[[:space:]]*-?[[:space:]]*(DOMAIN-SUFFIX|DOMAIN|DOMAIN-KEYWORD),(.+)$ ]]; then
+            echo "${BASH_REMATCH[2]}" | tr -d '[:space:]' >> "$temp_file"
         elif [[ "$line" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$ ]]; then
             echo "$line" >> "$temp_file"
         fi
