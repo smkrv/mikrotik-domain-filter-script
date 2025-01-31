@@ -445,84 +445,78 @@ process_domains() {
 
     log "Classifying domains from: $input"
 
-    # Create all required directories and files
     mkdir -p "${output_dir}/{second,regional,other}"
 
     local second_level="${output_dir}/second.txt"
     local regional="${output_dir}/regional.txt"
     local other="${output_dir}/other.txt"
     local base_domains="${output_dir}/base_domains.tmp"
+    local domain_registry="${output_dir}/domain_registry.tmp"
 
-    # Create all files from scratch
     : > "$second_level"
     : > "$regional"
     : > "$other"
     : > "$base_domains"
+    : > "$domain_registry"
 
-    # Check that all files are created successfully
-    for file in "$second_level" "$regional" "$other" "$base_domains"; do
-        if [[ ! -f "$file" ]]; then
-            log "ERROR: Failed to create file $file"
-            return 1
-        fi
-    done
-
-    log "Directories and files prepared for classification"
-
-    # First pass - find all second-level and regional domains
+    # First pass - register all domains and their levels
     while IFS= read -r domain; do
         local parts
         IFS='.' read -ra parts <<< "$domain"
         local levels=${#parts[@]}
 
-        # Limit to 4th level
+        # Limit to 4th level but preserve original structure
         if [[ $levels -gt 4 ]]; then
             domain="${parts[-4]}.${parts[-3]}.${parts[-2]}.${parts[-1]}"
+            levels=4
         fi
 
+        echo "$domain $levels" >> "$domain_registry"
+    done < "$input"
+
+    # Second pass - classify domains
+    while IFS=' ' read -r domain levels; do
+        local parts
+        IFS='.' read -ra parts <<< "$domain"
+
         if [[ $levels -eq 2 ]]; then
+            # Second-level domains
             echo "$domain" >> "$second_level"
             echo "$domain" >> "$base_domains"
-        else
+        elif [[ $levels -eq 3 ]]; then
             local base_domain="${parts[-2]}.${parts[-1]}"
             if grep -Fxq "$base_domain" "$PUBLIC_SUFFIX_FILE"; then
-                if [[ $levels -eq 3 ]]; then
-                    echo "$domain" >> "$regional"
+                # Regional domain
+                echo "$domain" >> "$regional"
+                echo "$domain" >> "$base_domains"
+            else
+                # Check if base domain exists
+                if ! grep -Fxq "$base_domain" "$second_level"; then
+                    # Keep third-level domain as is
+                    echo "$domain" >> "$other"
+                    echo "$domain" >> "$base_domains"
+                fi
+            fi
+        elif [[ $levels -eq 4 ]]; then
+            local base_domain="${parts[-2]}.${parts[-1]}"
+            local third_level="${parts[-3]}.${parts[-2]}.${parts[-1]}"
+
+            if grep -Fxq "$base_domain" "$PUBLIC_SUFFIX_FILE"; then
+                # Regional subdomain
+                if ! grep -Fxq "$third_level" "$regional"; then
+                    echo "$domain" >> "$other"
+                    echo "$domain" >> "$base_domains"
+                fi
+            else
+                # Check if parent domains exist
+                if ! grep -Fxq "$base_domain" "$second_level" && \
+                   ! grep -Fxq "$third_level" "$other"; then
+                    echo "$domain" >> "$other"
                     echo "$domain" >> "$base_domains"
                 fi
             fi
         fi
-    done < "$input"
-
-    # Check that files are not empty after first pass
-    if [[ ! -s "$base_domains" ]]; then
-        log "WARNING: No base domains found in $input"
-        return 1
-    fi
-
-    # Second pass - filter subdomains
-    while IFS= read -r domain; do
-        local parts
-        IFS='.' read -ra parts <<< "$domain"
-        local skip=false
-
-        # Skip already processed domains
-        if grep -Fxq "$domain" "$base_domains"; then
-            continue
-        fi
-
-        # Check if domain is a subdomain of already known domains
-        while IFS= read -r base; do
-            if [[ "$domain" == *".$base" ]]; then
-                skip=true
-                break
-            fi
-        done < "$base_domains"
-
-        [[ $skip == true ]] && continue
-
-        echo "$domain" >> "$other"
-    done < "$input"
+    done < "$domain_registry"
 
     # Sort and remove duplicates
     for file in "$second_level" "$regional" "$other"; do
@@ -531,12 +525,8 @@ process_domains() {
         fi
     done
 
-    # Check results before deleting temporary files
-    if [[ -f "$base_domains" ]]; then
-        rm -f "$base_domains"
-    else
-        log "WARNING: File $base_domains not found during deletion attempt"
-    fi
+    # Cleanup temporary files
+    rm -f "$base_domains" "$domain_registry"
 
     # Statistics
     local second_count=0 regional_count=0 other_count=0
@@ -549,13 +539,7 @@ process_domains() {
     log "- Regional domains: $regional_count"
     log "- Other domains: $other_count"
 
-    # Check operation success
-    if [[ $second_count -eq 0 && $regional_count -eq 0 && $other_count -eq 0 ]]; then
-        log "ERROR: No domains found after classification"
-        return 1
-    fi
-
-    return 0
+    return $(( second_count + regional_count + other_count > 0 ? 0 : 1 ))
 }
 
 # Function to prepare domains for DNS check
@@ -582,13 +566,15 @@ apply_whitelist() {
     if [[ ! -f "$input" || ! -f "$whitelist" ]]; then
         log "ERROR: One of the files does not exist"
         return 1
-    fi
+      fi
 
-    # Create temporary file for exclusion patterns
+    # Create temporary files
     local whitelist_pattern="${TMP_DIR}/whitelist_pattern.txt"
+    local whitelist_domains="${TMP_DIR}/whitelist_domains.txt"
     true > "$whitelist_pattern"
+    true > "$whitelist_domains"
 
-    # Process whitelist
+    # Process whitelist and create exclusion patterns
     while IFS= read -r domain; do
         local parts
         IFS='.' read -ra parts <<< "${domain//./ }"
@@ -597,14 +583,27 @@ apply_whitelist() {
 
         if [[ $levels -eq 2 ]]; then
             # Second-level domain
+            echo "$domain" >> "$whitelist_domains"
             echo "^${domain}$" >> "$whitelist_pattern"
             echo "\.${domain}$" >> "$whitelist_pattern"
         elif [[ $levels -eq 3 ]]; then
-            # Check if domain is regional
             base_domain="${parts[-2]}.${parts[-1]}"
             if grep -Fxq "$base_domain" "$PUBLIC_SUFFIX_FILE"; then
+                # Regional domain
+                echo "$domain" >> "$whitelist_domains"
                 echo "^${domain}$" >> "$whitelist_pattern"
                 echo "\.${domain}$" >> "$whitelist_pattern"
+            else
+                # Third-level domain
+                echo "$domain" >> "$whitelist_domains"
+                echo "^${domain}$" >> "$whitelist_pattern"
+            fi
+        elif [[ $levels -eq 4 ]]; then
+            # Check if it's a regional subdomain
+            base_domain="${parts[-2]}.${parts[-1]}"
+            if grep -Fxq "$base_domain" "$PUBLIC_SUFFIX_FILE"; then
+                echo "$domain" >> "$whitelist_domains"
+                echo "^${domain}$" >> "$whitelist_pattern"
             fi
         fi
     done < "$whitelist"
@@ -619,7 +618,7 @@ apply_whitelist() {
     local removed=$(($(wc -l < "$input") - $(wc -l < "$output")))
     log "Domains removed by whitelist: $removed"
 
-    rm -f "$whitelist_pattern"
+    rm -f "$whitelist_pattern" "$whitelist_domains"
 }
 
 # Function to check intersections between lists
