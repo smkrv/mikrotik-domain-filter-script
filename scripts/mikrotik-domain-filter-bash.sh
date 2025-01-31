@@ -727,7 +727,6 @@ initial_filter() {
 
     local total
     total=$(wc -l < "$output")
-    TOTAL_DOMAINS=$total
     log "Initially filtered domains: $total"
 
     return 0
