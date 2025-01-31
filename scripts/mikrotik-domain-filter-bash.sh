@@ -80,7 +80,7 @@ export LOG_FILE
 export DNS_MAX_RETRIES
 
 # Global variables for statistics
-declare -i TOTAL_DOMAINS=0
+# declare -i TOTAL_DOMAINS=0
 
 # Enable debugging
 # exec 2>"${WORK_DIR}/debug.log"
@@ -147,7 +147,6 @@ release_lock() {
 }
 
 # Signal handling
-trap trap_cleanup EXIT
 trap 'log "Script interrupted"; trap_cleanup' INT TERM
 
 init_directories() {
@@ -340,7 +339,8 @@ trap_cleanup() {
 }
 
 save_state() {
-    local temp_state="${STATE_DIR}/state_$(date +%s).tmp"
+    local temp_state
+    temp_state="${STATE_DIR}/state_$(date +%s).tmp"
     local main_md5 special_md5
 
     log "Saving state..."
@@ -1479,7 +1479,7 @@ check_updates_needed() {
         log "WARNING: Failed to clean temporary files"
     fi
 
-    return $(( update_needed == true ? 0 : 1 ))
+    return $(( update_needed == 1 ? 0 : 1 ))
 }
 
 # Helper function to restore backups
@@ -1724,4 +1724,5 @@ if ! main "$@"; then
     exit 1
 fi
 
+trap_cleanup
 exit 0
