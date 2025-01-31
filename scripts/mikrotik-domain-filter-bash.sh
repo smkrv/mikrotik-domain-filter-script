@@ -79,9 +79,6 @@ export DNS_RATE_LIMIT
 export LOG_FILE
 export DNS_MAX_RETRIES
 
-# Global variables for statistics
-# declare -i TOTAL_DOMAINS=0
-
 # Enable debugging
 # exec 2>"${WORK_DIR}/debug.log"
 
@@ -283,13 +280,11 @@ cleanup() {
 
 cleanup_invalid_cache() {
     log "Cleaning invalid cache entries..."
-    find "$CACHE_DIR" -type f -name "*.cache" -exec sh -c '
-        for f; do
-            if ! grep -qE "^(valid|invalid)$" "$f"; then
-                rm -f "$f"
-            fi
-        done
-    ' sh {} +
+    find "$CACHE_DIR" -type f -name "*.cache" -print0 | while IFS= read -r -d '' f; do
+        if ! grep -qE "^(valid|invalid)$" "$f"; then
+            rm -f "$f"
+        fi
+    done
 }
 
 log_cache_stats() {
@@ -356,7 +351,8 @@ save_state() {
     fi
 
     # Calculate MD5 sums with error checking
-    if ! main_md5=$(md5sum "$OUTPUT_FILE" 2>/dev/null); then
+    main_md5=$(md5sum "$OUTPUT_FILE" 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
         log "ERROR: Failed to calculate MD5 for main list"
         return 1
     fi
@@ -585,7 +581,8 @@ export -f validate_domain
 extract_domains() {
     local input=$1
     local output=$2
-    local temp_output="${TMP_DIR}/extracted_$(date +%s).tmp"
+    local temp_output
+    temp_output="${TMP_DIR}/extracted_$(date +%s).tmp"
 
     log "Extracting domains from: $input"
 
@@ -677,7 +674,8 @@ extract_domains() {
 initial_filter() {
     local input=$1
     local output=$2
-    local temp_output="${TMP_DIR}/filtered_$(date +%s).tmp"
+    local temp_output
+    temp_output="${TMP_DIR}/filtered_$(date +%s).tmp"
 
     log "Initial filtering of: $input"
 
@@ -706,7 +704,6 @@ initial_filter() {
          grep -v '^#' | \
          grep -v '^$' | \
          tr '[:upper:]' '[:lower:]' | \
-         tr -d ' ' | \
          awk 'length <= 253' > "$temp_output"; then
         log "ERROR: Domain filtering failed"
         rm -f "$temp_output"
@@ -960,8 +957,10 @@ apply_whitelist() {
     local input=$1
     local whitelist=$2
     local output=$3
-    local temp_pattern="${TMP_DIR}/whitelist_pattern_$(date +%s).tmp"
-    local temp_output="${TMP_DIR}/whitelist_filtered_$(date +%s).tmp"
+    local temp_pattern
+    temp_pattern="${TMP_DIR}/whitelist_pattern_$(date +%s).tmp"
+    local temp_output
+    temp_output="${TMP_DIR}/whitelist_filtered_$(date +%s).tmp"
 
     log "Applying whitelist to: $input"
 
@@ -1410,7 +1409,7 @@ check_updates_needed() {
 
     if [[ "$process_failed" == "true" ]]; then
         log "ERROR: Failed to process one or more sources"
-        find "$temp_dir" -type f ! -name "*md5" -delete 2>/dev/null || true
+        find "$temp_dir" -type f ! -name "*md5" -delete 2>/dev/null || :
         return 1
     fi
 
@@ -1419,14 +1418,14 @@ check_updates_needed() {
         local changed=false
         while IFS=' ' read -r source md5; do
             local prev_line
-            prev_line=$(grep "^${source}" "$previous_md5" || echo "")
+            prev_line=$(grep "^${source}[[:space:]]" "$previous_md5" || echo "")
 
             if [[ -z "$prev_line" ]]; then
                 changed=true
-                log "Content changed for source: $source"
+                log "Content changed for source: $source (no previous entry)"
             else
                 local prev_md5
-                prev_md5=$(echo "$prev_line" | cut -d' ' -f2)
+                prev_md5=$(echo "$prev_line" | awk '{print $2}')
 
                 if [[ "$md5" != "$prev_md5" ]]; then
                     changed=true
@@ -1437,21 +1436,42 @@ check_updates_needed() {
             fi
         done < "$current_md5"
 
+        # Set update_needed based on changes
         if [[ "$changed" == "true" ]]; then
             update_needed=true
+        else
+            update_needed=false
         fi
     else
         update_needed=true
         log "No previous state found, update needed"
+        # Create initial state file
+        if ! cp "$current_md5" "$previous_md5"; then
+            log "ERROR: Failed to create initial state file"
+            return 1
+        fi
     fi
 
+    # Force update if older than 24 hours
+    if [[ -f "$state_file" ]]; then
+        local last_update current_time
+        last_update=$(<"$state_file")
+        current_time=$(date +%s)
+
+        if (( current_time - last_update > 86400 )); then
+            log "Forced update due to time threshold"
+            update_needed=true
+        fi
+    fi
+
+    # Update MD5 checksums and state file if update is needed
     if [[ "$update_needed" == "true" ]]; then
         if ! cp "$current_md5" "$previous_md5"; then
             log "ERROR: Failed to update MD5 checksums"
             return 1
         fi
 
-        if ! date +%s > "$state_file"; then
+        if ! echo "$(date +%s)" > "$state_file"; then
             log "WARNING: Failed to save update state"
         fi
 
@@ -1461,17 +1481,7 @@ check_updates_needed() {
 
         log "Update state saved"
     else
-        # Force update if older than 24 hours
-        if [[ -f "$state_file" ]]; then
-            local last_update current_time
-            last_update=$(cat "$state_file")
-            current_time=$(date +%s)
-
-            if (( current_time - last_update > 86400 )); then
-                log "Forced update due to time threshold"
-                update_needed=true
-            fi
-        fi
+        log "No updates needed based on MD5 comparison"
     fi
 
     # Cleanup but preserve MD5 files
@@ -1479,8 +1489,17 @@ check_updates_needed() {
         log "WARNING: Failed to clean temporary files"
     fi
 
-    return $(( update_needed == 1 ? 0 : 1 ))
-}
+    # Return 0 if update is needed, 1 if not
+    if [[ "$update_needed" == "true" ]]; then
+        log "Updates needed"
+        return 0
+    else
+        log "No updates needed"
+        return 1
+    fi
+
+  }
+
 
 # Helper function to restore backups
 restore_backups() {
@@ -1535,6 +1554,8 @@ main() {
         release_lock
         return 0
     fi
+
+    log "Updates needed, proceeding with processing..."
 
     # Clean temporary files
     if ! cleanup; then
