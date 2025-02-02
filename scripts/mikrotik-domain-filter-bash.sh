@@ -1057,6 +1057,7 @@ check_intersections() {
     local main_list=$1
     local special_list=$2
     local temp_intersect="${TMP_DIR}/intersections.tmp"
+    local temp_main="${TMP_DIR}/main_without_duplicates.tmp"
 
     log "Checking intersections between lists..."
 
@@ -1070,31 +1071,43 @@ check_intersections() {
         return 1
     fi
 
-    # Create temporary file for intersections
-    if ! : > "$temp_intersect"; then
-        log "ERROR: Failed to create temporary file for intersections"
+    # Create temporary files
+    if ! : > "$temp_intersect" || ! : > "$temp_main"; then
+        log "ERROR: Failed to create temporary files"
         return 1
     fi
 
     # Find intersections using comm
     if ! comm -12 <(sort "$main_list") <(sort "$special_list") > "$temp_intersect"; then
         log "ERROR: Failed to check intersections"
-        rm -f "$temp_intersect"
+        rm -f "$temp_intersect" "$temp_main"
         return 1
     fi
 
-    # Check if we found any intersections
+    # If intersections found, remove them from main list
     if [[ -s "$temp_intersect" ]]; then
-        log "WARNING: Found intersections between lists:"
+        log "Found intersecting domains - moving to special list:"
         while IFS= read -r domain; do
-            log "Duplicate domain: $domain"
+            log "Moving domain to special list: $domain"
         done < "$temp_intersect"
-        rm -f "$temp_intersect"
-        return 1
+
+        # Remove intersecting domains from main list
+        if ! grep -vFf "$temp_intersect" "$main_list" > "$temp_main"; then
+            log "ERROR: Failed to remove intersecting domains from main list"
+            rm -f "$temp_intersect" "$temp_main"
+            return 1
+        fi
+
+        # Update main list
+        if ! mv "$temp_main" "$main_list"; then
+            log "ERROR: Failed to update main list"
+            rm -f "$temp_intersect" "$temp_main"
+            return 1
+        fi
     fi
 
-    rm -f "$temp_intersect"
-    log "No intersections found between lists"
+    rm -f "$temp_intersect" "$temp_main"
+    log "Intersection check completed - duplicates moved to special list"
     return 0
 }
 
@@ -1675,9 +1688,9 @@ main() {
         fi
     fi
 
-    # Check for intersections
+    # Check for intersections and move duplicates to special list
     if ! check_intersections "${TMP_DIR}/main_filtered.txt" "${TMP_DIR}/special_filtered.txt"; then
-        log "ERROR: Intersections found between lists"
+        log "ERROR: Failed to process list intersections"
         restore_backups
         release_lock
         return 1
