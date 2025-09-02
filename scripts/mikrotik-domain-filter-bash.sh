@@ -25,8 +25,11 @@ set -e
 
 # Path settings
 # Automatically determine working directory based on script location
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly WORK_DIR="${WORK_DIR:-${SCRIPT_DIR%/*}}"
+# Declare and assign separately to avoid masking return values (SC2155)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+WORK_DIR="${WORK_DIR:-${SCRIPT_DIR%/*}}"
+readonly WORK_DIR
 readonly SOURCES_FILE="${WORK_DIR}/sources.txt"
 readonly SOURCESSPECIAL_FILE="${WORK_DIR}/sources_special.txt"
 readonly WHITELIST_FILE="${WORK_DIR}/sources_whitelist.txt"
