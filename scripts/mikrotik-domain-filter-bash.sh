@@ -24,8 +24,9 @@ set -e
 # set -x
 
 # Path settings
-# Important: Verify that the following directory path is correct
-readonly WORK_DIR="/home/domain-filter-mikrotik"
+# Automatically determine working directory based on script location
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly WORK_DIR="${WORK_DIR:-${SCRIPT_DIR%/*}}"
 readonly SOURCES_FILE="${WORK_DIR}/sources.txt"
 readonly SOURCESSPECIAL_FILE="${WORK_DIR}/sources_special.txt"
 readonly WHITELIST_FILE="${WORK_DIR}/sources_whitelist.txt"
@@ -87,6 +88,76 @@ mkdir -p "$(dirname "$LOG_FILE")"
 
 # Clear old log
 : > "$LOG_FILE"
+
+# Function to display help
+show_help() {
+    cat << EOF
+Mikrotik Domain Filter Script v2.0
+
+USAGE:
+    $(basename "$0") [OPTIONS]
+
+DESCRIPTION:
+    A robust Bash solution for filtering and processing domain lists for Mikrotik devices,
+    enabling straightforward management of blocklists or allowlists.
+
+OPTIONS:
+    -h, --help      Show this help message and exit
+    -v, --version   Show version information
+
+CONFIGURATION:
+    Working Directory: $WORK_DIR (auto-detected from script location)
+    
+    Required files:
+    - sources.txt           Main domain list URLs
+    - sources_special.txt   Special domain list URLs
+    
+    Optional files:
+    - sources_whitelist.txt Whitelist domain URLs
+    - .env                  Environment configuration
+
+ENVIRONMENT VARIABLES:
+    WORK_DIR                Override working directory
+    EXPORT_GISTS           Enable GitHub Gist exports (true/false)
+    GITHUB_TOKEN           GitHub Personal Access Token
+    GIST_ID_MAIN           Main list Gist ID
+    GIST_ID_SPECIAL        Special list Gist ID
+
+For detailed documentation, visit:
+https://github.com/smkrv/mikrotik-domain-filter-script
+
+EOF
+}
+
+# Function to display version
+show_version() {
+    echo "Mikrotik Domain Filter Script v2.0"
+    echo "License: CC BY-NC-SA 4.0"
+    echo "Author: SMKRV"
+    echo "Repository: https://github.com/smkrv/mikrotik-domain-filter-script"
+}
+
+# Parse command line arguments
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -v|--version)
+                show_version
+                exit 0
+                ;;
+            *)
+                echo "Unknown option: $1"
+                echo "Use --help for usage information"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
 
 # Check for required files
 check_required_files() {
@@ -226,8 +297,8 @@ cleanup() {
     if [[ -d "$TMP_DIR" && "$TMP_DIR" =~ ^${WORK_DIR}/tmp ]]; then
         log "Cleaning temporary directory..."
 
-        # Create list of protected files
-        local protected_files=(
+        # Create list of protected files patterns
+        local protected_patterns=(
             "*md5"
             "domain_registry.*"
             "previous_state.*"
@@ -235,14 +306,20 @@ cleanup() {
             "*.backup"
         )
 
-        # Build exclude pattern
-        local exclude_pattern
-        exclude_pattern=$(printf " ! -name '%s'" "${protected_files[@]}")
+        # Remove files that don't match protected patterns
+        local find_cmd=(find "$TMP_DIR" -type f)
+        
+        # Add exclusion patterns
+        for pattern in "${protected_patterns[@]}"; do
+            find_cmd+=("!" "-name" "$pattern")
+        done
+        
+        find_cmd+=("-delete")
 
-        # Remove files
-        eval "find '$TMP_DIR' -type f $exclude_pattern -delete" || {
+        # Execute find command safely
+        if ! "${find_cmd[@]}" 2>/dev/null; then
             log "WARNING: Failed to clean temporary files"
-        }
+        fi
 
         # Remove empty directories except protected ones
         find "$TMP_DIR" -type d -empty ! -name "downloads" ! -name "state" -delete 2>/dev/null || {
@@ -1520,6 +1597,42 @@ restore_backups() {
   [[ -f "${OUTPUT_FILESPECIAL}.bak" ]] && mv "${OUTPUT_FILESPECIAL}.bak" "$OUTPUT_FILESPECIAL"
 }
 
+# Function to process a single domain list
+process_domain_list() {
+    local list_name=$1
+    local raw_file=$2
+    local tmp_dir_prefix=$3
+    
+    log "Processing ${list_name} list..."
+    
+    # Extract domains
+    if ! extract_domains "$raw_file" "${TMP_DIR}/${tmp_dir_prefix}_extracted.txt"; then
+        log "ERROR: Failed to extract ${list_name} domains"
+        return 1
+    fi
+    
+    # Initial filtering
+    if ! initial_filter "$raw_file" "${TMP_DIR}/${tmp_dir_prefix}_initial.txt"; then
+        log "ERROR: Failed to filter ${list_name} domains"
+        return 1
+    fi
+    
+    # Process and classify domains
+    if ! process_domains "${TMP_DIR}/${tmp_dir_prefix}_initial.txt" "${TMP_DIR}/${tmp_dir_prefix}"; then
+        log "ERROR: Failed to process ${list_name} domain list"
+        return 1
+    fi
+    
+    # Prepare domains for DNS check
+    if ! prepare_domains_for_dns_check "${TMP_DIR}/${tmp_dir_prefix}" "${TMP_DIR}/${tmp_dir_prefix}_filtered.txt"; then
+        log "ERROR: Failed to prepare ${list_name} domains for DNS check"
+        return 1
+    fi
+    
+    log "${list_name} list processing completed successfully"
+    return 0
+}
+
 # Main function
 main() {
     log "Script started..."
@@ -1624,42 +1737,15 @@ main() {
         log "Backup of special list created"
     fi
 
-    # Process main list
-    log "Processing main list..."
-    if ! extract_domains "$main_raw" "${TMP_DIR}/main_extracted.txt"; then
-        log "ERROR: Failed to extract main domains"
+    # Process main and special lists using the unified function
+    if ! process_domain_list "main" "$main_raw" "main"; then
+        log "ERROR: Failed to process main list"
         restore_backups
         release_lock
         return 1
     fi
 
-    if ! initial_filter "$main_raw" "${TMP_DIR}/main_initial.txt"; then
-        log "ERROR: Failed to filter main domains"
-        restore_backups
-        release_lock
-        return 1
-    fi
-
-    if ! process_domains "${TMP_DIR}/main_initial.txt" "${TMP_DIR}/main"; then
-        log "ERROR: Failed to process main domain list"
-        restore_backups
-        release_lock
-        return 1
-    fi
-
-    if ! prepare_domains_for_dns_check "${TMP_DIR}/main" "${TMP_DIR}/main_filtered.txt"; then
-        log "ERROR: Failed to prepare main domains for DNS check"
-        restore_backups
-        release_lock
-        return 1
-    fi
-
-    # Process special list
-    log "Processing special list..."
-    if ! extract_domains "$special_raw" "${TMP_DIR}/special_extracted.txt" || \
-       ! initial_filter "$special_raw" "${TMP_DIR}/special_initial.txt" || \
-       ! process_domains "${TMP_DIR}/special_initial.txt" "${TMP_DIR}/special" || \
-       ! prepare_domains_for_dns_check "${TMP_DIR}/special" "${TMP_DIR}/special_filtered.txt"; then
+    if ! process_domain_list "special" "$special_raw" "special"; then
         log "ERROR: Failed to process special list"
         restore_backups
         release_lock
@@ -1752,6 +1838,8 @@ main() {
 }
 
 # Main execution
+parse_arguments "$@"
+
 if ! main "$@"; then
     error "Script terminated with error"
     exit 1
