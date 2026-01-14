@@ -1,0 +1,11 @@
+# Example whitelist sources
+# Domains from these lists will be excluded from blocking
+
+# Apple domains (native services)
+https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/native.apple.txt
+
+# Samsung domains (native services)
+https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/native.samsung.txt
+
+# You can add more whitelist sources below
+# https://example.com/your-whitelist.txt

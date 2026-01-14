@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# @license: CC BY-NC-SA 4.0 International
+# @license: MIT License
 # @author: SMKRV
 # @github: https://github.com/smkrv/mikrotik-domain-filter-script
 # @source: https://github.com/smkrv/mikrotik-domain-filter-script
@@ -28,7 +28,27 @@ set -e
 # Declare and assign separately to avoid masking return values (SC2155)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
-WORK_DIR="${WORK_DIR:-${SCRIPT_DIR%/*}}"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+readonly REPO_DIR
+
+# Version - read from VERSION file or use embedded version
+if [[ -f "${REPO_DIR}/VERSION" ]]; then
+    VERSION="$(cat "${REPO_DIR}/VERSION" | tr -d '[:space:]')"
+else
+    VERSION="2.0.0"  # Fallback version
+fi
+readonly VERSION
+
+# Default WORK_DIR to current directory or parent of bin/ if running from repo
+if [[ -z "${WORK_DIR:-}" ]]; then
+    if [[ -d "${REPO_DIR}/config" ]]; then
+        # Running from repository - use parent directory
+        WORK_DIR="$REPO_DIR"
+    else
+        # Running standalone - use current directory
+        WORK_DIR="$(pwd)"
+    fi
+fi
 readonly WORK_DIR
 readonly SOURCES_FILE="${WORK_DIR}/sources.txt"
 readonly SOURCESSPECIAL_FILE="${WORK_DIR}/sources_special.txt"
@@ -49,14 +69,43 @@ readonly OUTPUT_FILESPECIAL="${WORK_DIR}/filtered_domains_special_mikrotik.txt"
 
 # Load environment variables from .env file if it exists
 if [[ -f "${WORK_DIR}/.env" ]]; then
+    # Allowed environment variable names (whitelist)
+    declare -A ALLOWED_ENV_KEYS=(
+        [EXPORT_GISTS]=1
+        [GITHUB_TOKEN]=1
+        [GIST_ID_MAIN]=1
+        [GIST_ID_SPECIAL]=1
+        [WORK_DIR]=1
+        [MAX_PARALLEL_JOBS]=1
+        [DNS_TIMEOUT]=1
+        [DNS_MAX_RETRIES]=1
+        [DNS_RATE_LIMIT]=1
+        [CACHE_TTL_DAYS]=1
+    )
+
     # shellcheck disable=SC1090
     while IFS='=' read -r key value; do
         # Skip comments and empty lines
-        [[ $key =~ ^#.*$ ]] && continue
+        [[ $key =~ ^[[:space:]]*#.*$ ]] && continue
         [[ -z "$key" ]] && continue
+        # Trim whitespace from key
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+        # Validate key name (only alphanumeric and underscore)
+        if [[ ! $key =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
+            echo "WARNING: Invalid env key format: $key" >&2
+            continue
+        fi
+        # Check if key is in allowed list
+        if [[ -z "${ALLOWED_ENV_KEYS[$key]}" ]]; then
+            echo "WARNING: Unknown env key ignored: $key" >&2
+            continue
+        fi
         # Remove quotes and export variable
         value="${value%\"}"
         value="${value#\"}"
+        value="${value%\'}"
+        value="${value#\'}"
         export "$key=$value"
     done < "${WORK_DIR}/.env"
 fi
@@ -71,11 +120,20 @@ readonly GIST_ID_SPECIAL=${GIST_ID_SPECIAL:-""} # Gist ID for special list
 readonly STATE_DIR="${WORK_DIR}/state"
 readonly PREVIOUS_STATE="${STATE_DIR}/previous_state.dat"
 
-# Performance settings
-readonly MAX_PARALLEL_JOBS=5
-readonly DNS_RATE_LIMIT=5
-readonly DNS_TIMEOUT=10
-readonly DNS_MAX_RETRIES=3
+# Performance settings (configurable via environment variables)
+readonly MAX_PARALLEL_JOBS=${MAX_PARALLEL_JOBS:-5}
+readonly DNS_RATE_LIMIT=${DNS_RATE_LIMIT:-5}
+readonly DNS_TIMEOUT=${DNS_TIMEOUT:-10}
+readonly DNS_MAX_RETRIES=${DNS_MAX_RETRIES:-3}
+
+# Cache settings
+readonly CACHE_TTL_DAYS=${CACHE_TTL_DAYS:-90}
+readonly CACHE_TTL_SECONDS=$((CACHE_TTL_DAYS * 24 * 60 * 60))
+readonly CACHE_MAX_SIZE_MB=1024
+
+# Time thresholds
+readonly PSL_UPDATE_DAYS=7
+readonly FORCE_UPDATE_SECONDS=86400  # 24 hours
 
 # Export variables for parallel
 export DNS_TIMEOUT
@@ -95,7 +153,7 @@ mkdir -p "$(dirname "$LOG_FILE")"
 # Function to display help
 show_help() {
     cat << EOF
-Mikrotik Domain Filter Script v2.0
+Mikrotik Domain Filter Script v${VERSION}
 
 USAGE:
     $(basename "$0") [OPTIONS]
@@ -134,8 +192,8 @@ EOF
 
 # Function to display version
 show_version() {
-    echo "Mikrotik Domain Filter Script v2.0"
-    echo "License: CC BY-NC-SA 4.0"
+    echo "Mikrotik Domain Filter Script v${VERSION}"
+    echo "License: MIT"
     echo "Author: SMKRV"
     echo "Repository: https://github.com/smkrv/mikrotik-domain-filter-script"
 }
@@ -169,11 +227,13 @@ check_required_files() {
     [[ ! -f "$SOURCES_FILE" ]] && missing_files+=("$SOURCES_FILE")
     [[ ! -f "$SOURCESSPECIAL_FILE" ]] && missing_files+=("$SOURCESSPECIAL_FILE")
 
-    if ! [[ ${#missing_files[@]} -eq 0 ]]; then
+    if [[ ${#missing_files[@]} -gt 0 ]]; then
         echo "ERROR: Missing required files:"
-        printf '%s\n' "${missing_files[@]}"
+        printf '  - %s\n' "${missing_files[@]}"
+        echo "Please create these files or copy from .example templates in scripts/ directory"
         exit 1
     fi
+    return 0
 }
 
 # Enhanced logging
@@ -208,13 +268,11 @@ acquire_lock() {
 # Unlock function
 release_lock() {
     log "Releasing lock..."
-    if [[ -e /proc/$$fd/9 ]]; then
+    if [[ -e /proc/$$/fd/9 ]]; then
         flock -u 9
         exec 9>&-
-        rm -f "$LOCK_FILE"
-    else
-        rm -f "$LOCK_FILE"
     fi
+    rm -f "$LOCK_FILE"
 }
 
 # Signal handling
@@ -337,16 +395,16 @@ cleanup() {
     if [[ -d "$CACHE_DIR" && "$CACHE_DIR" != "/" ]]; then
         log "Cleaning old cache files..."
 
-        # Remove files older than 90 days
-        find "$CACHE_DIR" -type f -name "*.cache" -mtime +90 -delete 2>/dev/null || {
+        # Remove files older than CACHE_TTL_DAYS
+        find "$CACHE_DIR" -type f -name "*.cache" -mtime +"$CACHE_TTL_DAYS" -delete 2>/dev/null || {
             log "WARNING: Failed to clean old cache files"
         }
 
         # Check cache size and clean if needed
         local cache_size
         cache_size=$(du -sm "$CACHE_DIR" 2>/dev/null | cut -f1)
-        if [[ -n "$cache_size" ]] && (( cache_size > 1024 )); then
-            log "Cache size exceeds 1GB, cleaning oldest files..."
+        if [[ -n "$cache_size" ]] && (( cache_size > CACHE_MAX_SIZE_MB )); then
+            log "Cache size exceeds ${CACHE_MAX_SIZE_MB}MB, cleaning oldest files..."
             find "$CACHE_DIR" -type f -name "*.cache" -printf '%T@ %p\n' | \
                 sort -n | head -n 1000 | cut -d' ' -f2- | xargs rm -f 2>/dev/null || {
                 log "WARNING: Failed to clean large cache"
@@ -431,8 +489,7 @@ save_state() {
     fi
 
     # Calculate MD5 sums with error checking
-    main_md5=$(md5sum "$OUTPUT_FILE" 2>/dev/null)
-    if [[ $? -ne 0 ]]; then
+    if ! main_md5=$(md5sum "$OUTPUT_FILE" 2>/dev/null); then
         log "ERROR: Failed to calculate MD5 for main list"
         return 1
     fi
@@ -502,10 +559,10 @@ check_domain() {
 
     if [[ -f "$cache_file" ]]; then
         local cache_time
-        cache_time=$(stat -c %Y "$cache_file")
+        cache_time=$(stat -c %Y "$cache_file" 2>/dev/null || stat -f %m "$cache_file" 2>/dev/null)
         local current_time
         current_time=$(date +%s)
-        if (( current_time - cache_time < 7776000 )); then
+        if (( current_time - cache_time < CACHE_TTL_SECONDS )); then
             local cache_status
             cache_status=$(cat "$cache_file")
             if [[ "$cache_status" != "valid" && "$cache_status" != "invalid" ]]; then
@@ -570,17 +627,17 @@ check_domains_parallel() {
     local current=0
     local processed=0
 
-    # Create temporary file for atomic result writing
-    local results_file="${TMP_DIR}/dns_results_$$"
-    local count_file="${TMP_DIR}/valid_count_$$"
-    : > "$results_file"
-    : > "$count_file"
+    # Create temporary directory for atomic result writing (one file per domain)
+    local results_dir="${TMP_DIR}/dns_results_$$"
+    mkdir -p "$results_dir"
 
     while IFS= read -r domain; do
         (
             if check_domain "$domain"; then
-                echo "$domain" >> "$results_file"
-                echo "1" >> "$count_file"
+                # Use atomic file creation per domain to avoid race conditions
+                local domain_hash
+                domain_hash=$(echo "$domain" | md5sum | cut -d' ' -f1)
+                echo "$domain" > "${results_dir}/${domain_hash}.valid"
                 log "Domain $domain is valid"
             fi
         ) &
@@ -592,9 +649,7 @@ check_domains_parallel() {
         if [[ $((current % MAX_PARALLEL_JOBS)) -eq 0 ]] || [[ $processed -eq $total ]]; then
             wait
             # Count intermediate valid domains
-            if [[ -f "$count_file" ]]; then
-                valid_count=$(wc -l < "$count_file")
-            fi
+            valid_count=$(find "$results_dir" -name "*.valid" 2>/dev/null | wc -l)
             current=0
             # Update progress every 100 domains
             if [[ $((processed % 100)) -eq 0 ]] || [[ $processed -eq $total ]]; then
@@ -605,16 +660,10 @@ check_domains_parallel() {
 
     wait
 
-    # Final count of valid domains
-    if [[ -f "$count_file" ]]; then
-        valid_count=$(wc -l < "$count_file")
-        rm -f "$count_file"
-    fi
-
-    # Collect all results
-    if [[ -f "$results_file" ]]; then
-        sort -u "$results_file" > "$temp_output"
-        rm -f "$results_file"
+    # Collect all results from individual files
+    if [[ -d "$results_dir" ]]; then
+        find "$results_dir" -name "*.valid" -exec cat {} \; 2>/dev/null | sort -u > "$temp_output"
+        rm -rf "$results_dir"
 
         if [[ -s "$temp_output" ]]; then
             mv "$temp_output" "$output"
@@ -628,22 +677,45 @@ check_domains_parallel() {
             return 1
         fi
     else
-        log "ERROR: Check results file not found"
+        log "ERROR: Results directory not found"
         return 1
     fi
 }
 
 # Function to load Public Suffix List
 load_public_suffix_list() {
-    if [[ ! -f "$PUBLIC_SUFFIX_FILE" ]] || [[ -n $(find "$PUBLIC_SUFFIX_FILE" -mtime +7 -print) ]]; then
-        log "Updating Public Suffix List..."
-        curl -sSL "https://publicsuffix.org/list/public_suffix_list.dat" | \
-        grep -v '^//' | grep -v '^$' > "$PUBLIC_SUFFIX_FILE"
-
-        if [[ ! -s "$PUBLIC_SUFFIX_FILE" ]]; then
-            error "Failed to download Public Suffix List. Check internet connection and access rights."
-        fi
+    local needs_update=false
+    
+    if [[ ! -f "$PUBLIC_SUFFIX_FILE" ]]; then
+        needs_update=true
+    elif [[ -n $(find "$PUBLIC_SUFFIX_FILE" -mtime +"$PSL_UPDATE_DAYS" -print 2>/dev/null) ]]; then
+        needs_update=true
     fi
+    
+    if [[ "$needs_update" == "true" ]]; then
+        log "Updating Public Suffix List..."
+        local temp_psl="${PUBLIC_SUFFIX_FILE}.tmp"
+        
+        if ! curl -sSL --max-time 60 "https://publicsuffix.org/list/public_suffix_list.dat" -o "$temp_psl"; then
+            log "ERROR: Failed to download Public Suffix List"
+            [[ -f "$PUBLIC_SUFFIX_FILE" ]] && return 0  # Use existing file
+            error "No Public Suffix List available. Check internet connection."
+        fi
+        
+        # Filter and validate
+        grep -v '^//' "$temp_psl" | grep -v '^$' | grep -v '^!' > "${temp_psl}.filtered"
+        
+        if [[ ! -s "${temp_psl}.filtered" ]]; then
+            rm -f "$temp_psl" "${temp_psl}.filtered"
+            [[ -f "$PUBLIC_SUFFIX_FILE" ]] && return 0  # Use existing file
+            error "Downloaded Public Suffix List is empty or corrupted."
+        fi
+        
+        mv "${temp_psl}.filtered" "$PUBLIC_SUFFIX_FILE"
+        rm -f "$temp_psl"
+        log "Public Suffix List updated: $(wc -l < "$PUBLIC_SUFFIX_FILE") entries"
+    fi
+    return 0
 }
 
 # Function to validate domain
@@ -1195,8 +1267,10 @@ check_intersections() {
 load_lists() {
     local sources=$1
     local output=$2
+    local loaded_count=0
+    local failed_count=0
 
-    true > "$output"
+    : > "$output"
 
     if [[ ! -f "$sources" ]]; then
         log "ERROR: Sources file $sources does not exist"
@@ -1204,53 +1278,93 @@ load_lists() {
     fi
 
     while read -r source; do
-      [[ -z "$source" || "$source" == "#"* ]] && continue
+        # Skip empty lines and comments (handle inline comments too)
+        source="${source%%#*}"  # Remove inline comments
+        source="${source#"${source%%[![:space:]]*}"}"  # Trim leading whitespace
+        source="${source%"${source##*[![:space:]]}"}"  # Trim trailing whitespace
+        [[ -z "$source" ]] && continue
 
-      log "Loading from source: $source"
-      local response
-      response=$(curl -sSL --max-time 30 --retry 3 --retry-delay 2 "$source")
+        log "Loading from source: $source"
+        local response
+        if response=$(curl -sSL --max-time 30 --retry 3 --retry-delay 2 "$source" 2>/dev/null); then
+            if [[ -n "$response" ]]; then
+                echo "$response" | tr -s '[:space:]' '\n' >> "$output"
+                ((loaded_count++))
+            else
+                log "WARNING: Empty response from $source"
+                ((failed_count++))
+            fi
+        else
+            log "WARNING: Failed to load $source"
+            ((failed_count++))
+        fi
+    done < "$sources"
 
-      if [[ $? -eq 0 && -n "$response" ]]; then
-          echo "$response" | tr -s '[:space:]' '\n' >> "$output"
-      else
-          log "WARNING: Failed to load $source"
-      fi
-  done < "$sources"
+    log "Sources loaded: $loaded_count successful, $failed_count failed"
+    
+    if [[ $loaded_count -eq 0 ]]; then
+        log "ERROR: No sources loaded successfully"
+        return 1
+    fi
+    
+    return 0
 }
 
 # Function to validate results
 validate_results() {
-  local main_list=$1
-  local special_list=$2
+    local main_list=$1
+    local special_list=$2
+    local invalid_count=0
 
-  # Check for file existence
-  if ! [[ -f "$main_list" ]]; then
-      return 1
-  fi
+    # Check for file existence
+    if [[ ! -f "$main_list" ]]; then
+        log "ERROR: Main list file does not exist: $main_list"
+        return 1
+    fi
 
-  if ! [[ -f "$special_list" ]]; then
-      return 1
-  fi
+    if [[ ! -f "$special_list" ]]; then
+        log "ERROR: Special list file does not exist: $special_list"
+        return 1
+    fi
 
-  # Check file size
-  if ! [[ -s "$main_list" ]]; then
-      return 1
-  fi
+    # Check file size
+    if [[ ! -s "$main_list" ]]; then
+        log "ERROR: Main list file is empty: $main_list"
+        return 1
+    fi
 
-  if ! [[ -s "$special_list" ]]; then
-      return 1
-  fi
+    if [[ ! -s "$special_list" ]]; then
+        log "ERROR: Special list file is empty: $special_list"
+        return 1
+    fi
 
-  # Check content format
-  while read -r line; do
-      validate_domain "$line" || return 1
-  done < "$main_list"
+    # Check content format for main list
+    while read -r line; do
+        if ! validate_domain "$line"; then
+            log "WARNING: Invalid domain in main list: $line"
+            ((invalid_count++))
+            if [[ $invalid_count -gt 10 ]]; then
+                log "ERROR: Too many invalid domains in main list (>10)"
+                return 1
+            fi
+        fi
+    done < "$main_list"
 
-  while read -r line; do
-      validate_domain "$line" || return 1
-  done < "$special_list"
+    # Check content format for special list
+    invalid_count=0
+    while read -r line; do
+        if ! validate_domain "$line"; then
+            log "WARNING: Invalid domain in special list: $line"
+            ((invalid_count++))
+            if [[ $invalid_count -gt 10 ]]; then
+                log "ERROR: Too many invalid domains in special list (>10)"
+                return 1
+            fi
+        fi
+    done < "$special_list"
 
-  return 0
+    log "Validation passed: main=$(wc -l < "$main_list") special=$(wc -l < "$special_list") domains"
+    return 0
 }
 
 # Function to save results
@@ -1550,7 +1664,7 @@ check_updates_needed() {
         last_update=$(<"$state_file")
         current_time=$(date +%s)
 
-        if (( current_time - last_update > 86400 )); then
+        if (( current_time - last_update > FORCE_UPDATE_SECONDS )); then
             log "Forced update due to time threshold"
             update_needed=true
         fi
@@ -1590,14 +1704,20 @@ check_updates_needed() {
         return 1
     fi
 
-  }
+}
 
 
 # Helper function to restore backups
 restore_backups() {
-  log "Restoring backups..."
-  [[ -f "${OUTPUT_FILE}.bak" ]] && mv "${OUTPUT_FILE}.bak" "$OUTPUT_FILE"
-  [[ -f "${OUTPUT_FILESPECIAL}.bak" ]] && mv "${OUTPUT_FILESPECIAL}.bak" "$OUTPUT_FILESPECIAL"
+    log "Restoring backups..."
+    if [[ -f "${OUTPUT_FILE}.bak" ]]; then
+        mv "${OUTPUT_FILE}.bak" "$OUTPUT_FILE"
+        log "Restored main list from backup"
+    fi
+    if [[ -f "${OUTPUT_FILESPECIAL}.bak" ]]; then
+        mv "${OUTPUT_FILESPECIAL}.bak" "$OUTPUT_FILESPECIAL"
+        log "Restored special list from backup"
+    fi
 }
 
 # Function to process a single domain list

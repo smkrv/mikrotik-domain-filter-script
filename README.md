@@ -1,9 +1,9 @@
 <div align="center">  
 
-[![GitHub last commit](https://img.shields.io/github/last-commit/smkrv/mikrotik-domain-filter-script.svg?style=flat-square)](https://github.com/smkrv/mikrotik-domain-filter-script/commits) [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by-nc-sa/4.0/) [![RouterOS](https://img.shields.io/badge/RouterOS-7.17-blue?style=flat-square)](https://help.mikrotik.com/docs/display/ROS/RouterOS) [![RouterOS](https://img.shields.io/badge/RouterOS-6.17-blue?style=flat-square)](https://help.mikrotik.com/docs/display/ROS/RouterOS) ![Status](https://img.shields.io/badge/Status-Production-green?style=flat-square) [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=flat-square&logo=Cloudflare&logoColor=white)](https://www.cloudflare.com/) [![Debian](https://img.shields.io/badge/Debian-12%20Bookworm-red?style=flat-square&logo=debian&logoColor=white)](https://www.debian.org/releases/bookworm/) [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.10-orange?style=flat-square&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.10/) [![Ubuntu LTS](https://img.shields.io/badge/Ubuntu%20LTS-22.04-orange?style=flat-square&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/) [![ShellCheck](https://img.shields.io/badge/ShellCheck-passing-success?style=flat-square&logo=gnu-bash&logoColor=white)](https://github.com/smkrv/mikrotik-domain-filter-script/actions/workflows/shellcheck.yml) ![English](https://img.shields.io/badge/en-English-blue?style=flat-square)
+[![GitHub last commit](https://img.shields.io/github/last-commit/smkrv/mikrotik-domain-filter-script.svg?style=flat-square)](https://github.com/smkrv/mikrotik-domain-filter-script/commits) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT) [![RouterOS](https://img.shields.io/badge/RouterOS-7.17-blue?style=flat-square)](https://help.mikrotik.com/docs/display/ROS/RouterOS) [![RouterOS](https://img.shields.io/badge/RouterOS-6.17-blue?style=flat-square)](https://help.mikrotik.com/docs/display/ROS/RouterOS) ![Status](https://img.shields.io/badge/Status-Production-green?style=flat-square) [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=flat-square&logo=Cloudflare&logoColor=white)](https://www.cloudflare.com/) [![Debian](https://img.shields.io/badge/Debian-12%20Bookworm-red?style=flat-square&logo=debian&logoColor=white)](https://www.debian.org/releases/bookworm/) [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.10-orange?style=flat-square&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.10/) [![Ubuntu LTS](https://img.shields.io/badge/Ubuntu%20LTS-22.04-orange?style=flat-square&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/) [![ShellCheck](https://img.shields.io/badge/ShellCheck-passing-success?style=flat-square&logo=gnu-bash&logoColor=white)](https://github.com/smkrv/mikrotik-domain-filter-script/actions/workflows/shellcheck.yml) ![English](https://img.shields.io/badge/en-English-blue?style=flat-square)
 
 
-  <img src="/assets/images/logo@2x.png" alt="Mikrotik Domain Filter Script" style="width: 70%; max-width: 960px; max-height: 480px; aspect-ratio: 16/9; object-fit: contain;"/>
+  <img src="/docs/images/logo@2x.png" alt="Mikrotik Domain Filter Script" style="width: 70%; max-width: 960px; max-height: 480px; aspect-ratio: 16/9; object-fit: contain;"/>
 
   ### Mikrotik Domain Filter Script: Bash solution for filtering domain lists, creating Adlists and DNS Static or DNS FWD entries for Mikrotik RouterOS
 </div>
@@ -16,62 +16,40 @@
 
 Furthermore, this script is an excellent fit for building and maintaining [Adlists](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Adlist), which are curated collections of domains serving advertisements. By returning the IP address `0.0.0.0` for ad-serving domain queries, the Adlist feature effectively null-routes unwanted content, improving user experience and reducing bandwidth usage.  
 In addition, the script integrates seamlessly with [DNS Static](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-DNSStatic) in Mikrotik RouterOS, allowing administrators to override specific DNS queries with custom entries, regular expressions, or dummy IP addresses for better control over DNS resolution. This functionality is particularly helpful for redirecting or blocking traffic at the DNS level—whether it’s entire zones or select domains.  
-Lastly, the script can also aid in generating DNS FWD records, making it a comprehensive solution for all DNS-related configurations in a Mikrotik environment. The repository [includes an example script (dns-static-updater.rsc)](/scripts/dns-static-updater.rsc) specifically tailored for RouterOS, demonstrating how to load domain lists onto the router and form DNS FWD entries, ensuring an even smoother integration process.
+Lastly, the script can also aid in generating DNS FWD records, making it a comprehensive solution for all DNS-related configurations in a Mikrotik environment. The repository [includes an example script (dns-static-updater.rsc)](/routeros/dns-static-updater.rsc) specifically tailored for RouterOS, demonstrating how to load domain lists onto the router and form DNS FWD entries, ensuring an even smoother integration process.
 
 #### TLDR; ⚡ Quick Setup Guide
 
 >  **Prerequisites**
-> - Unix-like system  
-> - Install dependencies: `sudo apt-get install curl jq awk grep parallel`  
->  
-> **Setup Steps**  
-> 1. Create a working directory  
-> 2. Copy script:  
->    - [mikrotik-domain-filter-bash.sh](/scripts/mikrotik-domain-filter-bash.sh)  
->  
-> 3. Configure scripts:  
->    - Set working directory path in `mikrotik-domain-filter-bash.sh`  
->    - Create source files:  
->      * `sources.txt`: Main domain list URLs  
->      * `sources_special.txt`: Special domain list URLs  
->      * `sources_whitelist.txt`: URLs of domain lists to exclude  
->  
-> 4. Configure Gist updates (optional):
->    - Create a `.env` file in the working directory with the following variables:
->      ```env
->      EXPORT_GISTS=true
->      GITHUB_TOKEN="your_github_personal_access_token"
->      GIST_ID_MAIN="your_main_gist_id"
->      GIST_ID_SPECIAL="your_special_gist_id"
->      ```
->    - Set `EXPORT_GISTS=true` to enable Gist updates
->    - Set `GITHUB_TOKEN` with your [GitHub Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
->    - Set `GIST_ID_MAIN` and `GIST_ID_SPECIAL` with respective Gist IDs
->  
-> 5. Add download URLs to source files  
->  
-> 6. Set execution permissions:  
->    ```bash  
->    chmod +x mikrotik-domain-filter-bash.sh  
->    ```  
->  
-> 7. Run the main script:  
->    ```bash  
->    ./mikrotik-domain-filter-bash.sh  
->    ```  
->  
-> **Output**  
-> - Filtered domain lists:  
->   * `filtered_domains_mikrotik.txt`  
->   * `filtered_domains_special_mikrotik.txt`  
-> - Logs: `script.log`  
->  
-> **MikroTik Configuration**  
-> 1. Import `dns-static-updater.rsc`  
-> 2. Configure DNS static records import for main and special domain lists  
-> 3. Set up local Mangle and other necessary rules  
->  
-> ⓘ **Tip**: Test thoroughly and monitor system resources!
+> - Unix-like system (Linux/macOS)
+> - Install dependencies: `sudo apt-get install curl jq gawk grep parallel`
+>
+> **Quick Start with Make**
+> ```bash
+> git clone https://github.com/smkrv/mikrotik-domain-filter-script.git
+> cd mikrotik-domain-filter-script
+> make deps      # Check dependencies
+> make setup     # Create work directory with config files
+> # Edit work/sources.txt, work/sources_special.txt, work/sources_whitelist.txt
+> make run       # Run the script
+> ```
+>
+> **Manual Setup**
+> 1. Clone repository and create working directory
+> 2. Copy config examples: `cp config/*.example work/` and rename
+> 3. Edit source files with your domain list URLs
+> 4. Run: `WORK_DIR=./work bin/mikrotik-domain-filter`
+>
+> **Output**
+> - Filtered domain lists: `filtered_domains_mikrotik.txt`, `filtered_domains_special_mikrotik.txt`
+> - Logs: `script.log`
+>
+> **MikroTik Configuration**
+> 1. Import [`routeros/dns-static-updater.rsc`](/routeros/dns-static-updater.rsc) to your router
+> 2. Configure the script variables (`listname`, `fwdto`, `url`)
+> 3. Schedule periodic execution
+>
+> ⓘ **Tip**: Run `make help` to see all available commands!
 
 ---
 
@@ -450,7 +428,7 @@ youtube.co.uk
 
 ### GitHub Gist Exports
 
-Configuration is currently done through environment variables, which can be set in a [.env](/scripts/.env.example) file:
+Configuration is done through environment variables in a `.env` file in your working directory:
 
 ```env
 # Enable or disable Gist updates
@@ -485,77 +463,114 @@ GIST_ID_SPECIAL="your_special_gist_id"
 ### Project Structure
 
 ```
-...
-├── dns-static-updater.rsc      # MikroTik RouterOS script for DNS Static records import
-├── mikrotik-domain-filter-bash.sh    # Main domain filtering script
-└── .env                             # Optional environment configuration file
+mikrotik-domain-filter-script/
+├── .github/
+│   └── workflows/
+│       └── shellcheck.yml          # CI/CD workflow for linting
+├── bin/
+│   └── mikrotik-domain-filter      # Main domain filtering script
+├── config/
+│   ├── sources.txt.example         # Example: main domain list URLs
+│   ├── sources_special.txt.example # Example: special domain list URLs
+│   └── sources_whitelist.txt.example # Example: whitelist URLs
+├── docs/
+│   ├── images/
+│   │   └── logo@2x.png
+│   └── REQUIREMENTS.md             # System requirements documentation
+├── routeros/
+│   └── dns-static-updater.rsc      # MikroTik RouterOS script
+├── .editorconfig                   # Editor configuration
+├── .gitignore                      # Git ignore rules
+├── CODE_OF_CONDUCT.md
+├── LICENSE                         # MIT License
+├── Makefile                        # Build and installation commands
+└── README.md
 ```
 
 ### Installation and Setup
 
 #### Prerequisites
-- Unix-like operating system
-- Bash shell
-- Sudo rights (might be required for setup)  
-- Required permissions to execute scripts
-- Sufficient disk space for logs and cache
 
-#### Setup Steps
+Before running the script, ensure your system meets the requirements in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 
-1. **Create Directory Structure**
-   - Create a working directory
-   - Place all necessary source files
-   - Configure required variables in scripts
+**Quick Dependencies Installation (Ubuntu/Debian):**
+```bash
+sudo apt-get update
+sudo apt-get install curl jq gawk grep parallel
+```
 
-2. **Prepare Scripts**
-   ```bash
-   # You might need sudo rights to change file permissions  
-   sudo chmod +x mikrotik-domain-filter-bash.sh  
+**macOS (via Homebrew):**
+```bash
+brew install coreutils grep gawk findutils parallel jq
+```
 
-   # Or if you own the files:  
-   chmod +x mikrotik-domain-filter-bash.sh  
+#### Installation Options
+
+**Option 1: Using Make (Recommended)**
+```bash
+git clone https://github.com/smkrv/mikrotik-domain-filter-script.git
+cd mikrotik-domain-filter-script
+make deps      # Verify dependencies
+make setup     # Create work/ directory with configs
+make run       # Run the script
+```
+
+**Option 2: System-wide Installation**
+```bash
+sudo make install
+# Script installed to /usr/local/bin/mikrotik-domain-filter
+```
+
+**Option 3: Manual Setup**
+```bash
+# Create working directory
+mkdir -p ~/mikrotik-filter && cd ~/mikrotik-filter
+
+# Copy and configure files
+cp /path/to/repo/config/*.example .
+mv sources.txt.example sources.txt
+mv sources_special.txt.example sources_special.txt
+mv sources_whitelist.txt.example sources_whitelist.txt
+
+# Edit configuration files with your URLs
+# Then run:
+WORK_DIR=$(pwd) /path/to/repo/bin/mikrotik-domain-filter
+```
+
+#### Configuration
+
+1. **Edit source files** in your working directory:
+   - `sources.txt` - URLs of main domain blocklists
+   - `sources_special.txt` - URLs of special domain lists
+   - `sources_whitelist.txt` - URLs of domains to exclude
+
+2. **Configure Gist exports** (optional) - create `.env` file:
+   ```env
+   EXPORT_GISTS=true
+   GITHUB_TOKEN="your_token"
+   GIST_ID_MAIN="gist_id"
+   GIST_ID_SPECIAL="gist_id"
    ```
-
-3. **Configure Log Rotation**
-   - Set up proper log rotation to manage script logs
-   - Ensure sufficient disk space for logs
-
-4. **Configure Gist Updates (Optional)**
-  - Create a `.env` file in the working directory
-  - Add GitHub Gist configuration variables
-  - Ensure `.env` file is not tracked by version control
 
 #### Running the Script
 
-1. Execute the main script:
-   ```bash
-   ./mikrotik-domain-filter-bash.sh
-   ```
+```bash
+# With Make
+make run
 
-2. Check logs for any errors if the script fails to run properly
+# Or directly
+WORK_DIR=/path/to/work bin/mikrotik-domain-filter
+
+# With options
+bin/mikrotik-domain-filter --help
+bin/mikrotik-domain-filter --version
+```
 
 #### Important Notes
-- Verify all variables are properly configured before running
-- Monitor log files for any issues
-- Ensure sufficient disk space on both the script host and MikroTik router
-- Regular monitoring of script execution is recommended
-- **⚠️ Remember: Test first, backup always, deploy confidently! 🛡️**
-
----
-
-### Prerequisites  
-
-Before running the script, ensure that your system meets all the requirements listed in [REQUIREMENTS.md](REQUIREMENTS.md).  
-
-The script requires several system utilities and proper permissions to function correctly. Follow the quick installation guide below to set up all necessary dependencies.  
-
-#### Quick Dependencies Installation  
-
-For Ubuntu/Debian systems:  
-```bash  
-sudo apt-get update  
-sudo apt-get install curl jq awk grep parallel
-```
+- **⚠️ Test first, backup always, deploy confidently! 🛡️**
+- Monitor log files (`script.log`) for issues
+- Ensure sufficient disk space for cache and logs
+- The script uses file locking to prevent concurrent runs
 
 ---
 
@@ -750,7 +765,7 @@ DEALINGS IN THE SOFTWARE.
 ## 📝 License
 
 Author: SMKRV
-[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) - see [LICENSE](LICENSE) for details.
+[MIT License](https://opensource.org/licenses/MIT) - see [LICENSE](LICENSE) for details.
 
 ## 💡 Support the Project
 

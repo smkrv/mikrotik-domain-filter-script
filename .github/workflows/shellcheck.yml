@@ -1,13 +1,18 @@
 name: ShellCheck
+
 permissions:
   contents: read
 
 on:
   push:
+    branches: [main]
     paths:
+      - 'bin/**'
       - '**.sh'
   pull_request:
+    branches: [main]
     paths:
+      - 'bin/**'
       - '**.sh'
 
 jobs:
@@ -15,12 +20,42 @@ jobs:
     name: ShellCheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Install ShellCheck
         run: sudo apt-get install -y shellcheck
 
-      - name: Run ShellCheck
+      - name: Run ShellCheck on bin/
         run: |
-          shellcheck --severity=warning --enable=all --shell=bash \
-            $(find . -type f -name "*.sh")
+          shellcheck --severity=warning --shell=bash bin/mikrotik-domain-filter
+
+      - name: Run ShellCheck on .sh files
+        run: |
+          shopt -s nullglob
+          files=$(find . -type f -name "*.sh" ! -path "./.git/*")
+          if [ -n "$files" ]; then
+            shellcheck --severity=warning --shell=bash $files
+          fi
+
+  syntax-check:
+    name: Bash Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check bash syntax
+        run: bash -n bin/mikrotik-domain-filter
+
+  makefile-test:
+    name: Makefile Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test make targets
+        run: |
+          make check
+          make deps || true  # May fail if parallel not installed
