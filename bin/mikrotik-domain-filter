@@ -79,7 +79,7 @@ if [[ -f "${WORK_DIR}/.env" ]]; then
         [MAX_PARALLEL_JOBS]=1
         [DNS_TIMEOUT]=1
         [DNS_MAX_RETRIES]=1
-        [DNS_RATE_LIMIT]=1
+
         [CACHE_TTL_DAYS]=1
     )
 
@@ -110,7 +110,7 @@ if [[ -f "${WORK_DIR}/.env" ]]; then
     done < "${WORK_DIR}/.env"
 
     # Validate numeric .env values (must be positive integers)
-    for _env_var in DNS_TIMEOUT DNS_MAX_RETRIES DNS_RATE_LIMIT MAX_PARALLEL_JOBS CACHE_TTL_DAYS; do
+    for _env_var in DNS_TIMEOUT DNS_MAX_RETRIES MAX_PARALLEL_JOBS CACHE_TTL_DAYS; do
         if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[0-9]+$ ]]; then
             echo "WARNING: Invalid numeric value for $_env_var='${!_env_var}', ignoring" >&2
             unset "$_env_var"
@@ -147,7 +147,7 @@ readonly PREVIOUS_STATE="${STATE_DIR}/previous_state.dat"
 
 # Performance settings (configurable via environment variables)
 readonly MAX_PARALLEL_JOBS=${MAX_PARALLEL_JOBS:-5}
-readonly DNS_RATE_LIMIT=${DNS_RATE_LIMIT:-5}
+
 readonly DNS_TIMEOUT=${DNS_TIMEOUT:-10}
 readonly DNS_MAX_RETRIES=${DNS_MAX_RETRIES:-3}
 
@@ -162,7 +162,6 @@ readonly FORCE_UPDATE_SECONDS=86400  # 24 hours
 
 # Export variables for subshells
 export DNS_TIMEOUT
-export DNS_RATE_LIMIT
 export LOG_FILE
 export DNS_MAX_RETRIES
 
@@ -269,8 +268,8 @@ log() {
 }
 
 error() {
-    log "ERROR: $1"
     echo "ERROR: $1" >&2
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" >> "$LOG_FILE"
     exit 1
 }
 
@@ -496,7 +495,7 @@ trap_cleanup() {
 
 save_state() {
     local temp_state
-    temp_state="${STATE_DIR}/state_$(date +%s).tmp"
+    temp_state=$(mktemp "${STATE_DIR}/state_XXXXXX")
     local main_md5 special_md5
 
     log "Saving state..."
@@ -551,7 +550,7 @@ handle_temp_file() {
     local suffix="${2:-tmp}"
     local temp_file
 
-    if ! temp_file=$(mktemp "${TMP_DIR}/${prefix}.XXXXXX.${suffix}"); then
+    if ! temp_file=$(mktemp "${TMP_DIR}/${prefix}_XXXXXX"); then
         log "ERROR: Failed to create temporary file with prefix ${prefix}"
         return 1
     fi
@@ -802,7 +801,7 @@ extract_domains() {
     local input=$1
     local output=$2
     local temp_output
-    temp_output="${TMP_DIR}/extracted_$(date +%s).tmp"
+    temp_output=$(mktemp "${TMP_DIR}/extracted_XXXXXX")
 
     log "Extracting domains from: $input"
 
@@ -895,7 +894,7 @@ initial_filter() {
     local input=$1
     local output=$2
     local temp_output
-    temp_output="${TMP_DIR}/filtered_$(date +%s).tmp"
+    temp_output=$(mktemp "${TMP_DIR}/filtered_XXXXXX")
 
     log "Initial filtering of: $input"
 
@@ -1177,9 +1176,9 @@ apply_whitelist() {
     local whitelist=$2
     local output=$3
     local temp_pattern
-    temp_pattern="${TMP_DIR}/whitelist_pattern_$(date +%s).tmp"
+    temp_pattern=$(mktemp "${TMP_DIR}/whitelist_pattern_XXXXXX")
     local temp_output
-    temp_output="${TMP_DIR}/whitelist_filtered_$(date +%s).tmp"
+    temp_output=$(mktemp "${TMP_DIR}/whitelist_filtered_XXXXXX")
 
     log "Applying whitelist to: $input"
 
@@ -1214,25 +1213,28 @@ apply_whitelist() {
 
         case $levels in
             2)
-                # Second-level domain
-                echo "^${domain}$" >> "$temp_pattern"
-                echo "\.${domain}$" >> "$temp_pattern"
+                # Second-level domain (escape dots for regex)
+                local escaped="${domain//./\\.}"
+                echo "^${escaped}$" >> "$temp_pattern"
+                echo "\\.${escaped}$" >> "$temp_pattern"
                 ;;
             3)
                 # Check if it's a regional domain
                 local base_domain="${parts[-2]}.${parts[-1]}"
+                local escaped="${domain//./\\.}"
                 if grep -Fxq "$base_domain" "$PUBLIC_SUFFIX_FILE"; then
-                    echo "^${domain}$" >> "$temp_pattern"
-                    echo "\.${domain}$" >> "$temp_pattern"
+                    echo "^${escaped}$" >> "$temp_pattern"
+                    echo "\\.${escaped}$" >> "$temp_pattern"
                 else
-                    echo "^${domain}$" >> "$temp_pattern"
+                    echo "^${escaped}$" >> "$temp_pattern"
                 fi
                 ;;
             4)
                 # Only exact matches for fourth-level domains
                 local base_domain="${parts[-2]}.${parts[-1]}"
+                local escaped="${domain//./\\.}"
                 if grep -Fxq "$base_domain" "$PUBLIC_SUFFIX_FILE"; then
-                    echo "^${domain}$" >> "$temp_pattern"
+                    echo "^${escaped}$" >> "$temp_pattern"
                 fi
                 ;;
         esac
@@ -1240,11 +1242,17 @@ apply_whitelist() {
 
     # Apply whitelist patterns
     if [[ -s "$temp_pattern" ]]; then
-        if ! grep -vf "$temp_pattern" "$input" > "$temp_output"; then
-            log "ERROR: Failed to apply whitelist patterns"
-            rm -f "$temp_pattern" "$temp_output"
-            return 1
-        fi
+        grep -vf "$temp_pattern" "$input" > "$temp_output" || {
+            local grep_exit=$?
+            if [[ $grep_exit -eq 1 ]]; then
+                log "WARNING: All domains matched whitelist, output is empty"
+                : > "$temp_output"
+            else
+                log "ERROR: Failed to apply whitelist patterns (grep exit code: $grep_exit)"
+                rm -f "$temp_pattern" "$temp_output"
+                return 1
+            fi
+        }
     else
         if ! cp "$input" "$temp_output"; then
             log "ERROR: Failed to copy input to temporary file"
@@ -1312,11 +1320,17 @@ check_intersections() {
         done < "$temp_intersect"
 
         # Remove intersecting domains from main list
-        if ! grep -vFf "$temp_intersect" "$main_list" > "$temp_main"; then
-            log "ERROR: Failed to remove intersecting domains from main list"
-            rm -f "$temp_intersect" "$temp_main"
-            return 1
-        fi
+        grep -vFf "$temp_intersect" "$main_list" > "$temp_main" || {
+            local grep_exit=$?
+            if [[ $grep_exit -eq 1 ]]; then
+                log "WARNING: All main domains are in special list"
+                : > "$temp_main"
+            else
+                log "ERROR: Failed to remove intersecting domains (grep exit code: $grep_exit)"
+                rm -f "$temp_intersect" "$temp_main"
+                return 1
+            fi
+        }
 
         # Update main list
         if ! mv "$temp_main" "$main_list"; then
@@ -1719,12 +1733,12 @@ check_updates_needed() {
     fi
 
     # Force update if older than 24 hours
-    if [[ -f "$state_file" ]]; then
+    if [[ -f "$state_file" && -s "$state_file" ]]; then
         local last_update current_time
         last_update=$(<"$state_file")
         current_time=$(date +%s)
 
-        if (( current_time - last_update > FORCE_UPDATE_SECONDS )); then
+        if [[ "$last_update" =~ ^[0-9]+$ ]] && (( current_time - last_update > FORCE_UPDATE_SECONDS )); then
             log "Forced update due to time threshold"
             update_needed=true
         fi
@@ -1794,8 +1808,8 @@ process_domain_list() {
         return 1
     fi
     
-    # Initial filtering
-    if ! initial_filter "$raw_file" "${TMP_DIR}/${tmp_dir_prefix}_initial.txt"; then
+    # Initial filtering on extracted output (not raw input)
+    if ! initial_filter "${TMP_DIR}/${tmp_dir_prefix}_extracted.txt" "${TMP_DIR}/${tmp_dir_prefix}_initial.txt"; then
         log "ERROR: Failed to filter ${list_name} domains"
         return 1
     fi
@@ -1939,7 +1953,7 @@ main() {
     if [[ -f "$whitelist_raw" ]]; then
         log "Applying whitelist..."
         if ! extract_domains "$whitelist_raw" "${TMP_DIR}/whitelist_extracted.txt" || \
-           ! initial_filter "$whitelist_raw" "${TMP_DIR}/whitelist.txt" || \
+           ! initial_filter "${TMP_DIR}/whitelist_extracted.txt" "${TMP_DIR}/whitelist.txt" || \
            ! apply_whitelist "${TMP_DIR}/main_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/main_filtered_clean.txt" || \
            ! apply_whitelist "${TMP_DIR}/special_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/special_filtered_clean.txt"; then
             log "ERROR: Failed to apply whitelist"
@@ -2028,5 +2042,4 @@ if ! main "$@"; then
     exit 1
 fi
 
-trap_cleanup
 exit 0

@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced fragile grep-based JSON parsing with jq in DNS validation
 - Simplified `release_lock()` — removed broken `/proc` filesystem check
 - Replaced GNU-only `find -printf` with `stat -c` in cache cleanup
+- `grep -v` exit code 1 no longer treated as error when all lines filtered by whitelist
+- Empty `update_state.dat` no longer causes arithmetic error on first run
+- `extract_domains` output now properly feeds into `initial_filter` (Clash-format domains no longer lost)
+- Whitelist regex patterns now escape dots to prevent false matches (`google.com` no longer matches `googleXcom`)
+- Double cleanup/release_lock on normal exit path removed
+- Duplicate error output to stderr removed (was writing to both stdout+stderr+logfile)
+- Predictable temp file names replaced with `mktemp` XXXXXX (prevents collisions and race conditions)
+
+### Removed
+- Dead `DNS_RATE_LIMIT` configuration variable (was exported but never used)
 
 ### Security
 - Fixed: GITHUB_TOKEN no longer exposed in process list (uses temp header file with chmod 600)
