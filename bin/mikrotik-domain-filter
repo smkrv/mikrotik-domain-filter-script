@@ -1631,20 +1631,17 @@ check_updates_needed() {
     # Compare current and previous states
     local changed=false
     while IFS=' ' read -r source md5; do
-        local prev_line
-        prev_line=$(grep -F "${source} " "$previous_md5" || echo "")
+        local prev_md5_val
+        prev_md5_val=$(awk -v url="$source" '$1 == url { print $2 }' "$previous_md5")
 
-        if [[ -z "$prev_line" ]]; then
+        if [[ -z "$prev_md5_val" ]]; then
             changed=true
             log "Content changed for source: $source (no previous entry)"
         else
-            local prev_md5
-            prev_md5=$(echo "$prev_line" | awk '{print $2}')
-
-            if [[ "$md5" != "$prev_md5" ]]; then
+            if [[ "$md5" != "$prev_md5_val" ]]; then
                 changed=true
                 log "Content changed for source: $source"
-                log "Previous MD5: $prev_md5"
+                log "Previous MD5: $prev_md5_val"
                 log "Current MD5: $md5"
             fi
         fi
