@@ -8,7 +8,7 @@
 # Large lists might cause memory issues on some devices.
 # For more details, see: https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Introduction
 #
-# @license: CC BY-NC-SA 4.0 International
+# @license: MIT
 # @author: SMKRV
 # @github: https://github.com/smkrv/mikrotik-domain-filter-script
 # @source: https://github.com/smkrv/mikrotik-domain-filter-script
@@ -16,10 +16,11 @@
 
 :local listname "allow-list";
 :local fwdto "localhost";
-:local url "https://raw.githubusercontent.com/example/repo/main/special-domains.txt";
+:local url "https://YOUR_GITHUB_RAW_URL_HERE/special-domains.txt";
 :local counter 0;
 :local removedCounter 0;
 :local validDomains [:toarray ""];
+:local maxEntries 5000;
 
 # Log start
 :log info ("Starting DNS entries update script for list: " . $listname);
@@ -76,20 +77,28 @@
 
 # Step 4: Add new entries to DNS static
 :log info "Adding new DNS static entries...";
+:local limitReached false;
 :foreach domain in=$validDomains do={
-    :if ([:len $domain] > 0) do={
-        :do {
-            /ip dns static add name=$domain type=FWD forward-to=$fwdto \
-                address-list=$listname match-subdomain=yes \
-                comment="Added by $listname script";
-            :set counter ($counter + 1);
-            :log info ("Added DNS entry: " . $domain);
-        } on-error={
-            :log warning ("Failed to add DNS entry for: " . $domain);
-        }
+    :if ($limitReached = false) do={
+        :if ($counter >= $maxEntries) do={
+            :log warning ("Entry limit reached: " . $maxEntries . ", stopping");
+            :set limitReached true;
+        } else={
+            :if ([:len $domain] > 0) do={
+                :do {
+                    /ip dns static add name=$domain type=FWD forward-to=$fwdto \
+                        address-list=$listname match-subdomain=yes \
+                        comment="Added by $listname script";
+                    :set counter ($counter + 1);
+                    :log info ("Added DNS entry: " . $domain);
+                } on-error={
+                    :log warning ("Failed to add DNS entry for: " . $domain);
+                }
 
-        # Add a delay of 10 milliseconds after each entry
-        :delay 10ms;
+                # Add a delay of 10 milliseconds after each entry
+                :delay 10ms;
+            }
+        }
     }
 }
 

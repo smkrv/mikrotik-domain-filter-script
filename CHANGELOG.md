@@ -21,10 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Duplicate error output to stderr removed (was writing to both stdout+stderr+logfile)
 - Predictable temp file names replaced with `mktemp` XXXXXX (prevents collisions and race conditions)
 
+### Fixed (continued)
+- RouterOS script license header updated from CC BY-NC-SA 4.0 to MIT
+- `cleanup()` path matching uses glob instead of regex (safe with special chars in WORK_DIR path)
+
 ### Removed
 - Dead `DNS_RATE_LIMIT` configuration variable (was exported but never used)
 
 ### Security
+- File and directory permissions tightened from world-readable (755/644) to owner-only (700/600)
+- `.env` file permissions warning when not restricted to 600/400
+- RouterOS script: entry count limit (5000) to prevent memory exhaustion, removed squattable example URL
+- GitHub Actions `actions/checkout` pinned to commit SHA (v4.2.2)
 - Fixed: GITHUB_TOKEN no longer exposed in process list (uses temp header file with chmod 600)
 - Fixed: Auth temp file guaranteed cleanup via `|| rc=$?` pattern (prevents leak on curl failure)
 - Fixed: .env numeric values validated to prevent curl argument injection; zero values rejected

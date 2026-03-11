@@ -133,6 +133,12 @@ if [[ -f "${WORK_DIR}/.env" ]]; then
         echo "WARNING: Invalid EXPORT_GISTS value '${EXPORT_GISTS}', defaulting to false" >&2
         unset EXPORT_GISTS
     fi
+
+    # Warn about loose .env permissions
+    env_perms=$(stat -c %a "${WORK_DIR}/.env" 2>/dev/null)
+    if [[ -n "$env_perms" && "$env_perms" != "600" && "$env_perms" != "400" ]]; then
+        echo "WARNING: .env file has loose permissions ($env_perms), recommend: chmod 600 .env" >&2
+    fi
 fi
 
 # GitHub Gist settings !Use env var if available
@@ -307,7 +313,7 @@ init_directories() {
         error "Failed to create state directory"
     fi
 
-    if ! chmod 755 "$STATE_DIR"; then
+    if ! chmod 700 "$STATE_DIR"; then
         log "WARNING: Failed to set permissions for state directory"
     else
         log "State directory created with correct permissions"
@@ -318,7 +324,7 @@ init_directories() {
         if ! touch "${STATE_DIR}/update_state.dat"; then
             log "WARNING: Failed to create state file"
         fi
-        if ! chmod 644 "${STATE_DIR}/update_state.dat"; then
+        if ! chmod 600 "${STATE_DIR}/update_state.dat"; then
             log "WARNING: Failed to set permissions for state file"
         fi
     fi
@@ -331,7 +337,7 @@ init_directories() {
                 error "Failed to create directory ${dir}"
             fi
             # Set proper permissions (rwxr-xr-x)
-            if ! chmod 755 "$dir"; then
+            if ! chmod 700 "$dir"; then
                 log "WARNING: Failed to set permissions for ${dir}"
             fi
         fi
@@ -377,7 +383,7 @@ cleanup() {
     done
 
     # Clean temporary directory
-    if [[ -d "$TMP_DIR" && "$TMP_DIR" =~ ^${WORK_DIR}/tmp ]]; then
+    if [[ -d "$TMP_DIR" && "$TMP_DIR" == "${WORK_DIR}/tmp"* ]]; then
         log "Cleaning temporary directory..."
 
         # Create list of protected files patterns
@@ -505,7 +511,7 @@ save_state() {
             log "ERROR: Failed to create state directory"
             return 1
         fi
-        if ! chmod 755 "$STATE_DIR"; then
+        if ! chmod 700 "$STATE_DIR"; then
             log "WARNING: Failed to set permissions for state directory"
         fi
     fi
@@ -529,7 +535,7 @@ save_state() {
     fi
 
     # Set proper permissions
-    if ! chmod 644 "$temp_state"; then
+    if ! chmod 600 "$temp_state"; then
         log "WARNING: Failed to set permissions for state file"
     fi
 
@@ -555,7 +561,7 @@ handle_temp_file() {
         return 1
     fi
 
-    if ! chmod 644 "$temp_file"; then
+    if ! chmod 600 "$temp_file"; then
         log "WARNING: Failed to set permissions for ${temp_file}"
     fi
 
@@ -821,7 +827,7 @@ extract_domains() {
         return 1
     fi
 
-    if ! chmod 644 "$temp_output"; then
+    if ! chmod 600 "$temp_output"; then
         log "WARNING: Failed to set permissions for temporary file"
     fi
 
@@ -914,7 +920,7 @@ initial_filter() {
         return 1
     fi
 
-    if ! chmod 644 "$temp_output"; then
+    if ! chmod 600 "$temp_output"; then
         log "WARNING: Failed to set permissions for temporary file"
     fi
 
@@ -997,7 +1003,7 @@ process_domains() {
             log "ERROR: Failed to create/clear file: $file"
             return 1
         fi
-        if ! chmod 644 "$file"; then
+        if ! chmod 600 "$file"; then
             log "WARNING: Failed to set permissions for: $file"
         fi
     done
@@ -1200,7 +1206,7 @@ apply_whitelist() {
             log "ERROR: Failed to create temporary file: $temp_file"
             return 1
         fi
-        if ! chmod 644 "$temp_file"; then
+        if ! chmod 600 "$temp_file"; then
             log "WARNING: Failed to set permissions for: $temp_file"
         fi
     done
@@ -1486,7 +1492,7 @@ save_results() {
             if ! cp "$src" "$dst"; then
                 log "WARNING: Failed to create backup of $src"
             else
-                chmod 644 "$dst" 2>/dev/null
+                chmod 600 "$dst" 2>/dev/null
             fi
         fi
     done
@@ -1515,7 +1521,7 @@ save_results() {
 
     # Set proper permissions
     for file in "$temp_main" "$temp_special"; do
-        if ! chmod 644 "$file"; then
+        if ! chmod 600 "$file"; then
             log "WARNING: Failed to set permissions for $file"
         fi
     done
@@ -1616,7 +1622,7 @@ check_updates_needed() {
         return 1
     fi
 
-    if ! chmod 755 "$temp_dir"; then
+    if ! chmod 700 "$temp_dir"; then
         log "WARNING: Failed to set permissions for temporary directory"
     fi
 
@@ -1626,7 +1632,7 @@ check_updates_needed() {
             log "ERROR: Cannot create file: ${file}"
             return 1
         fi
-        if ! chmod 644 "$file" 2>/dev/null; then
+        if ! chmod 600 "$file" 2>/dev/null; then
             log "WARNING: Failed to set permissions for ${file}"
         fi
     done
@@ -1755,7 +1761,7 @@ check_updates_needed() {
             log "WARNING: Failed to save update state"
         fi
 
-        if ! chmod 644 "$state_file" 2>/dev/null; then
+        if ! chmod 600 "$state_file" 2>/dev/null; then
             log "WARNING: Failed to set permissions for state file"
         fi
 
