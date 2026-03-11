@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-03-12
+
+### Fixed
+- Critical: domains classified as "other" (standalone subdomains) were silently dropped from DNS check
+- Critical: domain classification order-dependent — children processed before parents due to alphabetical sort
+- Critical: `trap_cleanup` always exited with code 0 (signal exit code masked by `log` return value)
+- `check_updates_needed` did not strip inline comments from source files (unlike `load_lists`)
+- `update_gists` ARG_MAX risk: file content passed as command-line argument instead of temp file
+- Whitelist silently ignored 5+ level domains and non-PSL 4-level domains
+
+### Removed
+- Unreachable `exit 1` after `error()` call
+- Unreachable `else` branch in `check_updates_needed` (file always exists due to earlier `touch`)
+- Unused subdirectory creation in `process_domains`
+
 ## [2.1.0] - 2026-03-12
 
 ### Fixed
@@ -94,6 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[2.1.1]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v1.0.7...v2.0.0
 [1.0.7]: https://github.com/smkrv/mikrotik-domain-filter-script/releases/tag/v1.0.7
