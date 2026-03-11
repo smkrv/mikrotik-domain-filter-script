@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplified `release_lock()` — removed broken `/proc` filesystem check
 - Replaced GNU-only `find -printf` with `stat -c` in cache cleanup
 
+### Security
+- Fixed: GITHUB_TOKEN no longer exposed in process list (uses temp header file with chmod 600)
+- Fixed: Auth temp file guaranteed cleanup via `|| rc=$?` pattern (prevents leak on curl failure)
+- Fixed: .env numeric values validated to prevent curl argument injection; zero values rejected
+- Fixed: GIST_ID format validated (hex, 20-32 chars) to prevent GitHub API path traversal
+- Fixed: URL scheme validation enforces HTTPS-only for all source downloads and update checks
+- Fixed: `--proto '=https'` added to all curl calls to prevent scheme downgrade via redirects
+- Fixed: Domain re-validation at DNS check entry point (defense-in-depth)
+- Fixed: Lock file moved from world-writable /tmp to WORK_DIR/tmp (prevents symlink attacks)
+- Fixed: Gist payload written to temp file to avoid ARG_MAX limits on large domain lists
+
 ### Changed
 - **BREAKING**: Dropped macOS support — Linux only (Debian 10+, Ubuntu 20.04+)
 - Removed unused GNU `parallel` dependency; added `flock` to dependency check

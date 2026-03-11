@@ -56,8 +56,8 @@ readonly WHITELIST_FILE="${WORK_DIR}/sources_whitelist.txt"
 readonly PUBLIC_SUFFIX_FILE="${WORK_DIR}/public_suffix_list.dat"
 readonly LOG_FILE="${WORK_DIR}/script.log"
 
-# This lock file path must also be correct to avoid conflicts
-readonly LOCK_FILE="/tmp/domains_update.lock"
+# Lock file in WORK_DIR/tmp to avoid symlink attacks in world-writable /tmp
+readonly LOCK_FILE="${WORK_DIR}/tmp/domains_update.lock"
 
 # Temporary directories and files
 readonly TMP_DIR="${WORK_DIR}/tmp"
@@ -108,6 +108,31 @@ if [[ -f "${WORK_DIR}/.env" ]]; then
         value="${value#\'}"
         export "$key=$value"
     done < "${WORK_DIR}/.env"
+
+    # Validate numeric .env values (must be positive integers)
+    for _env_var in DNS_TIMEOUT DNS_MAX_RETRIES DNS_RATE_LIMIT MAX_PARALLEL_JOBS CACHE_TTL_DAYS; do
+        if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[0-9]+$ ]]; then
+            echo "WARNING: Invalid numeric value for $_env_var='${!_env_var}', ignoring" >&2
+            unset "$_env_var"
+        elif [[ -n "${!_env_var:-}" && "${!_env_var}" -eq 0 ]]; then
+            echo "WARNING: $_env_var cannot be 0, ignoring" >&2
+            unset "$_env_var"
+        fi
+    done
+
+    # Validate GIST_ID format (hex strings, 20-32 chars)
+    for _env_var in GIST_ID_MAIN GIST_ID_SPECIAL; do
+        if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[a-fA-F0-9]{20,32}$ ]]; then
+            echo "WARNING: Invalid format for $_env_var, ignoring" >&2
+            unset "$_env_var"
+        fi
+    done
+
+    # Validate EXPORT_GISTS is boolean
+    if [[ -n "${EXPORT_GISTS:-}" && "$EXPORT_GISTS" != "true" && "$EXPORT_GISTS" != "false" ]]; then
+        echo "WARNING: Invalid EXPORT_GISTS value '${EXPORT_GISTS}', defaulting to false" >&2
+        unset EXPORT_GISTS
+    fi
 fi
 
 # GitHub Gist settings !Use env var if available
@@ -538,6 +563,41 @@ handle_temp_file() {
     echo "$temp_file"
 }
 
+# Authenticated GitHub API request via temp header file (avoids token in process list)
+github_api_request() {
+    local method=$1
+    local url=$2
+    local data=$3
+    local auth_file
+
+    auth_file=$(mktemp "${TMP_DIR}/auth.XXXXXX")
+    chmod 600 "$auth_file"
+    printf 'Authorization: token %s' "$GITHUB_TOKEN" > "$auth_file"
+
+    local response
+    local rc=0
+    if [[ -n "$data" ]]; then
+        # $data is a path to a file containing JSON payload (avoids ARG_MAX limits)
+        response=$(curl -s -X "$method" \
+            -H @"$auth_file" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            --proto '=https' \
+            -d @"$data" \
+            "$url") || rc=$?
+    else
+        response=$(curl -s -X "$method" \
+            -H @"$auth_file" \
+            -H "Accept: application/vnd.github.v3+json" \
+            --proto '=https' \
+            "$url") || rc=$?
+    fi
+
+    rm -f "$auth_file"
+    echo "$response"
+    return $rc
+}
+
 # Function to check dependencies
 check_dependencies() {
     local deps=(curl jq awk grep flock)
@@ -551,6 +611,13 @@ check_dependencies() {
 # Function to check domain via DNS
 check_domain() {
     local domain=$1
+
+    # Defense-in-depth: validate domain even though upstream should filter
+    if ! validate_domain "$domain"; then
+        log "WARNING: Invalid domain passed to check_domain: $domain"
+        return 1
+    fi
+
     local retry_count=0
     local success=false
     local cache_file="${CACHE_DIR}/${domain}.cache"
@@ -697,7 +764,7 @@ load_public_suffix_list() {
         log "Updating Public Suffix List..."
         local temp_psl="${PUBLIC_SUFFIX_FILE}.tmp"
         
-        if ! curl -sSL --max-time 60 "https://publicsuffix.org/list/public_suffix_list.dat" -o "$temp_psl"; then
+        if ! curl --proto '=https' -sSL --max-time 60 "https://publicsuffix.org/list/public_suffix_list.dat" -o "$temp_psl"; then
             log "ERROR: Failed to download Public Suffix List"
             [[ -f "$PUBLIC_SUFFIX_FILE" ]] && return 0  # Use existing file
             error "No Public Suffix List available. Check internet connection."
@@ -1285,9 +1352,16 @@ load_lists() {
         source="${source%"${source##*[![:space:]]}"}"  # Trim trailing whitespace
         [[ -z "$source" ]] && continue
 
+        # Validate URL scheme — only HTTPS allowed
+        if [[ ! "$source" =~ ^https:// ]]; then
+            log "WARNING: Skipping non-HTTPS source: $source"
+            ((failed_count++)) || true
+            continue
+        fi
+
         log "Loading from source: $source"
         local response
-        if response=$(curl -sSL --max-time 30 --retry 3 --retry-delay 2 "$source" 2>/dev/null); then
+        if response=$(curl --proto '=https' -sSL --max-time 30 --retry 3 --retry-delay 2 "$source" 2>/dev/null); then
             if [[ -n "$response" ]]; then
                 echo "$response" | tr -s '[:space:]' '\n' >> "$output"
                 ((loaded_count++)) || true
@@ -1464,74 +1538,54 @@ update_gists() {
 
     log "Starting gist update..."
 
-    # Check requirements
-    if ! command -v curl >/dev/null 2>&1; then
-        log "ERROR: curl is required"
-        return 1
-    fi
-
-    if ! command -v jq >/dev/null 2>&1; then
-        log "ERROR: jq is required"
-        return 1
-    fi
-
     [[ -z "$GITHUB_TOKEN" ]] && { log "ERROR: GITHUB_TOKEN is not set"; return 1; }
 
     # Update main list
     if [[ -n "$GIST_ID_MAIN" && -f "$OUTPUT_FILE" ]]; then
         log "Updating main list gist..."
-        local content
-        content=$(cat "$OUTPUT_FILE")
+        local payload_file
+        payload_file=$(mktemp "${TMP_DIR}/payload.XXXXXX")
+        jq -Rs '.' "$OUTPUT_FILE" | \
+            jq -n --arg filename "$(basename "$OUTPUT_FILE")" \
+                  --argjson content "$(jq -Rs '.' "$OUTPUT_FILE")" \
+                  '{"files": {($filename): {"content": $content}}}' > "$payload_file"
 
         local response
-        response=$(curl -s -X PATCH \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -d "{
-                \"files\": {
-                    \"$(basename "$OUTPUT_FILE")\": {
-                        \"content\": $(echo "$content" | jq -R -s .)
-                    }
-                    } }" \
-                "https://api.github.com/gists/$GIST_ID_MAIN")
+        response=$(github_api_request "PATCH" "https://api.github.com/gists/$GIST_ID_MAIN" "$payload_file")
 
-            if echo "$response" | jq -e '.id' > /dev/null; then
-                log "✅ Main list gist updated successfully"
-            else
-                log "❌ Error updating main list gist"
-                return 1
-            fi
+        rm -f "$payload_file"
+        if echo "$response" | jq -e '.id' > /dev/null 2>&1; then
+            log "Main list gist updated successfully"
+        else
+            log "ERROR: Failed to update main list gist"
+            return 1
         fi
+    fi
 
-        # Update special list
-        if [[ -n "$GIST_ID_SPECIAL" && -f "$OUTPUT_FILESPECIAL" ]]; then
-            log "Updating special list gist..."
-            local content
-            content=$(cat "$OUTPUT_FILESPECIAL")
+    # Update special list
+    if [[ -n "$GIST_ID_SPECIAL" && -f "$OUTPUT_FILESPECIAL" ]]; then
+        log "Updating special list gist..."
+        local payload_file
+        payload_file=$(mktemp "${TMP_DIR}/payload.XXXXXX")
+        jq -Rs '.' "$OUTPUT_FILESPECIAL" | \
+            jq -n --arg filename "$(basename "$OUTPUT_FILESPECIAL")" \
+                  --argjson content "$(jq -Rs '.' "$OUTPUT_FILESPECIAL")" \
+                  '{"files": {($filename): {"content": $content}}}' > "$payload_file"
 
-            local response
-            response=$(curl -s -X PATCH \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                -H "Accept: application/vnd.github.v3+json" \
-                -d "{
-                    \"files\": {
-                        \"$(basename "$OUTPUT_FILESPECIAL")\": {
-                            \"content\": $(echo "$content" | jq -R -s .)
-                        }
-                    }
-                }" \
-                "https://api.github.com/gists/$GIST_ID_SPECIAL")
+        local response
+        response=$(github_api_request "PATCH" "https://api.github.com/gists/$GIST_ID_SPECIAL" "$payload_file")
 
-            if echo "$response" | jq -e '.id' > /dev/null; then
-                log "✅ Special list gist updated successfully"
-            else
-                log "❌ Error updating special list gist"
-                return 1
-            fi
+        rm -f "$payload_file"
+        if echo "$response" | jq -e '.id' > /dev/null 2>&1; then
+            log "Special list gist updated successfully"
+        else
+            log "ERROR: Failed to update special list gist"
+            return 1
         fi
+    fi
 
-        return 0
-    }
+    return 0
+}
 
 # Function to check if update is needed
 check_updates_needed() {
@@ -1569,7 +1623,7 @@ check_updates_needed() {
         temp_file="${temp_dir}/$(echo "$source" | md5sum | cut -d' ' -f1)"
 
         log "Downloading: $source"
-        if ! curl -sSL --max-time 30 --retry 3 --retry-delay 2 "$source" -o "$temp_file"; then
+        if ! curl --proto '=https' -sSL --max-time 30 --retry 3 --retry-delay 2 "$source" -o "$temp_file"; then
             log "WARNING: Failed to download $source"
             return 1
         fi
@@ -1604,6 +1658,11 @@ check_updates_needed() {
         if [[ -f "$source_file" ]]; then
             while IFS= read -r source; do
                 if [[ -z "$source" ]] || [[ "$source" == "#"* ]]; then
+                    continue
+                fi
+                # Validate URL scheme — only HTTPS allowed
+                if [[ ! "$source" =~ ^https:// ]]; then
+                    log "WARNING: Skipping non-HTTPS source in update check: $source"
                     continue
                 fi
                 if ! download_and_check "$source"; then
