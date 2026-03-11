@@ -1591,9 +1591,10 @@ check_updates_needed() {
     for source_file in "$SOURCES_FILE" "$SOURCESSPECIAL_FILE" "$WHITELIST_FILE"; do
         if [[ -f "$source_file" ]]; then
             while IFS= read -r source; do
-                if [[ -z "$source" ]] || [[ "$source" == "#"* ]]; then
-                    continue
-                fi
+                source="${source%%#*}"
+                source="${source#"${source%%[![:space:]]*}"}"
+                source="${source%"${source##*[![:space:]]}"}"
+                [[ -z "$source" ]] && continue
                 # Validate URL scheme — only HTTPS allowed
                 if [[ ! "$source" =~ ^https:// ]]; then
                     log "WARNING: Skipping non-HTTPS source in update check: $source"
