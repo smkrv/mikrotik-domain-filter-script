@@ -1477,12 +1477,14 @@ update_gists() {
     # Update main list
     if [[ -n "$GIST_ID_MAIN" && -f "$OUTPUT_FILE" ]]; then
         log "Updating main list gist..."
-        local payload_file
+        local payload_file content_file
         payload_file=$(mktemp "${TMP_DIR}/payload.XXXXXX")
-        jq -Rs '.' "$OUTPUT_FILE" | \
-            jq -n --arg filename "$(basename "$OUTPUT_FILE")" \
-                  --argjson content "$(jq -Rs '.' "$OUTPUT_FILE")" \
-                  '{"files": {($filename): {"content": $content}}}' > "$payload_file"
+        content_file=$(mktemp "${TMP_DIR}/content.XXXXXX")
+        jq -Rs '.' "$OUTPUT_FILE" > "$content_file"
+        jq -n --arg filename "$(basename "$OUTPUT_FILE")" \
+              --slurpfile content "$content_file" \
+              '{"files": {($filename): {"content": $content[0]}}}' > "$payload_file"
+        rm -f "$content_file"
 
         local response
         response=$(github_api_request "PATCH" "https://api.github.com/gists/$GIST_ID_MAIN" "$payload_file")
@@ -1499,12 +1501,14 @@ update_gists() {
     # Update special list
     if [[ -n "$GIST_ID_SPECIAL" && -f "$OUTPUT_FILESPECIAL" ]]; then
         log "Updating special list gist..."
-        local payload_file
+        local payload_file content_file
         payload_file=$(mktemp "${TMP_DIR}/payload.XXXXXX")
-        jq -Rs '.' "$OUTPUT_FILESPECIAL" | \
-            jq -n --arg filename "$(basename "$OUTPUT_FILESPECIAL")" \
-                  --argjson content "$(jq -Rs '.' "$OUTPUT_FILESPECIAL")" \
-                  '{"files": {($filename): {"content": $content}}}' > "$payload_file"
+        content_file=$(mktemp "${TMP_DIR}/content.XXXXXX")
+        jq -Rs '.' "$OUTPUT_FILESPECIAL" > "$content_file"
+        jq -n --arg filename "$(basename "$OUTPUT_FILESPECIAL")" \
+              --slurpfile content "$content_file" \
+              '{"files": {($filename): {"content": $content[0]}}}' > "$payload_file"
+        rm -f "$content_file"
 
         local response
         response=$(github_api_request "PATCH" "https://api.github.com/gists/$GIST_ID_SPECIAL" "$payload_file")
