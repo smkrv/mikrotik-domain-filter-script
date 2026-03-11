@@ -303,8 +303,9 @@ release_lock() {
     rm -f "$LOCK_FILE"
 }
 
-# Signal handling
-trap 'trap_exit_code=$?; log "Script interrupted"; trap_cleanup $trap_exit_code' INT TERM
+# Signal handling — use per-signal traps for guaranteed exit codes
+trap 'log "Script interrupted (SIGINT)"; trap_cleanup 130' INT
+trap 'log "Script interrupted (SIGTERM)"; trap_cleanup 143' TERM
 
 init_directories() {
     log "Initialization started..."
@@ -1283,6 +1284,13 @@ load_lists() {
         source="${source%"${source##*[![:space:]]}"}"  # Trim trailing whitespace
         [[ -z "$source" ]] && continue
 
+        # Reject URLs with embedded whitespace
+        if [[ "$source" =~ [[:space:]] ]]; then
+            log "WARNING: Skipping source with whitespace: $source"
+            ((failed_count++)) || true
+            continue
+        fi
+
         # Validate URL scheme — only HTTPS allowed
         if [[ ! "$source" =~ ^https:// ]]; then
             log "WARNING: Skipping non-HTTPS source: $source"
@@ -1596,6 +1604,11 @@ check_updates_needed() {
                 source="${source#"${source%%[![:space:]]*}"}"
                 source="${source%"${source##*[![:space:]]}"}"
                 [[ -z "$source" ]] && continue
+                # Reject URLs with embedded whitespace
+                if [[ "$source" =~ [[:space:]] ]]; then
+                    log "WARNING: Skipping source with whitespace in update check: $source"
+                    continue
+                fi
                 # Validate URL scheme — only HTTPS allowed
                 if [[ ! "$source" =~ ^https:// ]]; then
                     log "WARNING: Skipping non-HTTPS source in update check: $source"
