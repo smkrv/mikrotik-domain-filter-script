@@ -12,7 +12,7 @@
 
 ## Introduction
 
-**Mikrotik Domain Filter Script** is a robust Bash solution (designed to run on *nix systems, not on RouterOS) primarily designed for filtering and processing domain lists for [Mikrotik](https://mikrotik.com/) devices, enabling straightforward management of blocklists or allowlists. This script also adapts seamlessly to other network environments, making it suitable for a wide range of domain-based filtering tasks. By combining domain classification, DNS validation, and whitelist handling, this tool offers a comprehensive workflow to create accurate and reliable filtered lists, ensuring efficient network policy enforcement.
+**Mikrotik Domain Filter Script** is a robust Bash solution (designed to run on Linux systems, not on RouterOS) primarily designed for filtering and processing domain lists for [Mikrotik](https://mikrotik.com/) devices, enabling straightforward management of blocklists or allowlists. This script also adapts seamlessly to other network environments, making it suitable for a wide range of domain-based filtering tasks. By combining domain classification, DNS validation, and whitelist handling, this tool offers a comprehensive workflow to create accurate and reliable filtered lists, ensuring efficient network policy enforcement.
 
 Furthermore, this script is an excellent fit for building and maintaining [Adlists](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Adlist), which are curated collections of domains serving advertisements. By returning the IP address `0.0.0.0` for ad-serving domain queries, the Adlist feature effectively null-routes unwanted content, improving user experience and reducing bandwidth usage.  
 In addition, the script integrates seamlessly with [DNS Static](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-DNSStatic) in Mikrotik RouterOS, allowing administrators to override specific DNS queries with custom entries, regular expressions, or dummy IP addresses for better control over DNS resolution. This functionality is particularly helpful for redirecting or blocking traffic at the DNS level—whether it’s entire zones or select domains.  
@@ -21,8 +21,8 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 #### TLDR; ⚡ Quick Setup Guide
 
 >  **Prerequisites**
-> - Unix-like system (Linux/macOS)
-> - Install dependencies: `sudo apt-get install curl jq gawk grep parallel`
+> - Linux system (Debian 10+, Ubuntu 20.04+)
+> - Install dependencies: `sudo apt-get install curl jq gawk grep`
 >
 > **Quick Start with Make**
 > ```bash
@@ -84,7 +84,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 - **Logging**: A logging mechanism is set up to record events and errors in a log file.
 - **Lock Mechanism**: A file lock is used to ensure that only one instance of the script runs at a time, preventing conflicts.
 - **Directory Initialization**: Required directories are checked and created if they don’t exist.
-- **Dependency Check**: The script verifies the presence of required system tools like `curl`, `jq`, `grep`, `awk`, `sort`, and `parallel`.
+- **Dependency Check**: The script verifies the presence of required system tools like `curl`, `jq`, `grep`, `awk`, `sort`, and `flock`.
 
 ### File Checks and Cleanup
 
@@ -105,7 +105,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 ### DNS Checks  
 
 - **Domain Validation**: Each domain is checked via DNS to ensure it resolves correctly. This involves sending a DNS query and verifying the response.  
-- **Parallel Processing**: To improve efficiency, DNS checks are performed in parallel using the `parallel` tool. Results are stored in temporary files and aggregated.  
+- **Parallel Processing**: To improve efficiency, DNS checks are performed concurrently using background subshells. Results are stored in temporary files and aggregated.
 - **DNS Resolution Method**: Verification is performed using Cloudflare's DNS-over-HTTPS (DoH) service[^¹](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/), which provides:  
   - Encrypted DNS queries  
   - JSON API support  
@@ -496,12 +496,7 @@ Before running the script, ensure your system meets the requirements in [docs/RE
 **Quick Dependencies Installation (Ubuntu/Debian):**
 ```bash
 sudo apt-get update
-sudo apt-get install curl jq gawk grep parallel
-```
-
-**macOS (via Homebrew):**
-```bash
-brew install coreutils grep gawk findutils parallel jq
+sudo apt-get install curl jq gawk grep
 ```
 
 #### Installation Options

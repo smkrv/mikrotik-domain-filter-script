@@ -135,7 +135,7 @@ readonly CACHE_MAX_SIZE_MB=1024
 readonly PSL_UPDATE_DAYS=7
 readonly FORCE_UPDATE_SECONDS=86400  # 24 hours
 
-# Export variables for parallel
+# Export variables for subshells
 export DNS_TIMEOUT
 export DNS_RATE_LIMIT
 export LOG_FILE
@@ -268,10 +268,8 @@ acquire_lock() {
 # Unlock function
 release_lock() {
     log "Releasing lock..."
-    if [[ -e /proc/$$/fd/9 ]]; then
-        flock -u 9
-        exec 9>&-
-    fi
+    flock -u 9 2>/dev/null || true
+    exec 9>&- 2>/dev/null || true
     rm -f "$LOCK_FILE"
 }
 
@@ -405,7 +403,7 @@ cleanup() {
         cache_size=$(du -sm "$CACHE_DIR" 2>/dev/null | cut -f1)
         if [[ -n "$cache_size" ]] && (( cache_size > CACHE_MAX_SIZE_MB )); then
             log "Cache size exceeds ${CACHE_MAX_SIZE_MB}MB, cleaning oldest files..."
-            find "$CACHE_DIR" -type f -name "*.cache" -printf '%T@ %p\n' | \
+            find "$CACHE_DIR" -type f -name "*.cache" -exec stat -c '%Y %n' {} + 2>/dev/null | \
                 sort -n | head -n 1000 | cut -d' ' -f2- | xargs rm -f 2>/dev/null || {
                 log "WARNING: Failed to clean large cache"
             }
@@ -542,7 +540,7 @@ handle_temp_file() {
 
 # Function to check dependencies
 check_dependencies() {
-    local deps=(curl jq awk grep parallel)
+    local deps=(curl jq awk grep flock)
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             error "Required dependency: $dep"
@@ -559,35 +557,38 @@ check_domain() {
 
     if [[ -f "$cache_file" ]]; then
         local cache_time
-        cache_time=$(stat -c %Y "$cache_file" 2>/dev/null || stat -f %m "$cache_file" 2>/dev/null)
-        local current_time
-        current_time=$(date +%s)
-        if (( current_time - cache_time < CACHE_TTL_SECONDS )); then
-            local cache_status
-            cache_status=$(cat "$cache_file")
-            if [[ "$cache_status" != "valid" && "$cache_status" != "invalid" ]]; then
-                log "WARNING: Invalid cache entry for $domain"
-                rm -f "$cache_file"
-            else
-                [[ "$cache_status" == "valid" ]] && return 0
-                return 1
+        if cache_time=$(stat -c %Y "$cache_file" 2>/dev/null); then
+            local current_time
+            current_time=$(date +%s)
+            if (( current_time - cache_time < CACHE_TTL_SECONDS )); then
+                local cache_status
+                cache_status=$(cat "$cache_file" 2>/dev/null)
+                if [[ "$cache_status" != "valid" && "$cache_status" != "invalid" ]]; then
+                    log "WARNING: Invalid cache entry for $domain"
+                    rm -f "$cache_file"
+                else
+                    [[ "$cache_status" == "valid" ]] && return 0
+                    return 1
+                fi
             fi
+        else
+            rm -f "$cache_file"
         fi
     fi
 
     while [[ $retry_count -lt $DNS_MAX_RETRIES && $success == false ]]; do
         [[ $retry_count -gt 0 ]] && sleep 2
 
-        if curl --connect-timeout $DNS_TIMEOUT --max-time $DNS_TIMEOUT -s -f \
+        if curl --connect-timeout "$DNS_TIMEOUT" --max-time "$DNS_TIMEOUT" -s -f \
             --header "accept: application/dns-json" \
-            "https://cloudflare-dns.com/dns-query?name=${domain}&type=NS" | \
-            grep -q '"Status":0.*"Answer":\[.*"type":2'; then
+            "https://cloudflare-dns.com/dns-query?name=${domain}&type=A" | \
+            jq -e '.Status == 0 and (.Answer | length > 0)' >/dev/null 2>&1; then
             echo "valid" > "$cache_file"
             success=true
             return 0
         fi
 
-        ((retry_count++))
+        ((retry_count++)) || true
     done
 
     echo "invalid" > "$cache_file"
@@ -642,8 +643,8 @@ check_domains_parallel() {
             fi
         ) &
 
-        ((current++))
-        ((processed++))
+        ((current++)) || true
+        ((processed++)) || true
 
         # Control parallel processes
         if [[ $((current % MAX_PARALLEL_JOBS)) -eq 0 ]] || [[ $processed -eq $total ]]; then
@@ -762,7 +763,7 @@ extract_domains() {
     local extracted=0
 
     while IFS= read -r line; do
-        ((processed++))
+        ((processed++)) || true
 
         # Skip empty lines and comments
         if [[ -z "$line" ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
@@ -781,7 +782,7 @@ extract_domains() {
                     rm -f "$temp_output"
                     return 1
                 fi
-                ((extracted++))
+                ((extracted++)) || true
             fi
         elif [[ "$line" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$ ]]; then
             if validate_domain "$line"; then
@@ -790,7 +791,7 @@ extract_domains() {
                     rm -f "$temp_output"
                     return 1
                 fi
-                ((extracted++))
+                ((extracted++)) || true
             fi
         fi
 
@@ -852,7 +853,7 @@ initial_filter() {
     fi
 
     # Multi-stage filtering with error checking
-    if ! grep -P '^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$' "$input" | \
+    if ! grep -E '^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$' "$input" | \
          grep -v '^#' | \
          grep -v '^$' | \
          tr '[:upper:]' '[:lower:]' | \
@@ -1289,14 +1290,14 @@ load_lists() {
         if response=$(curl -sSL --max-time 30 --retry 3 --retry-delay 2 "$source" 2>/dev/null); then
             if [[ -n "$response" ]]; then
                 echo "$response" | tr -s '[:space:]' '\n' >> "$output"
-                ((loaded_count++))
+                ((loaded_count++)) || true
             else
                 log "WARNING: Empty response from $source"
-                ((failed_count++))
+                ((failed_count++)) || true
             fi
         else
             log "WARNING: Failed to load $source"
-            ((failed_count++))
+            ((failed_count++)) || true
         fi
     done < "$sources"
 
@@ -1342,7 +1343,7 @@ validate_results() {
     while read -r line; do
         if ! validate_domain "$line"; then
             log "WARNING: Invalid domain in main list: $line"
-            ((invalid_count++))
+            ((invalid_count++)) || true
             if [[ $invalid_count -gt 10 ]]; then
                 log "ERROR: Too many invalid domains in main list (>10)"
                 return 1
@@ -1355,7 +1356,7 @@ validate_results() {
     while read -r line; do
         if ! validate_domain "$line"; then
             log "WARNING: Invalid domain in special list: $line"
-            ((invalid_count++))
+            ((invalid_count++)) || true
             if [[ $invalid_count -gt 10 ]]; then
                 log "ERROR: Too many invalid domains in special list (>10)"
                 return 1
@@ -1411,7 +1412,7 @@ save_results() {
         while IFS= read -r domain; do
             if validate_domain "$domain"; then
                 echo "$domain" >> "$dst"
-                ((valid_count++))
+                ((valid_count++)) || true
             else
                 log "WARNING: Invalid domain found: $domain"
             fi

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Critical: `set -e` + `((var++))` causing script abort when counter starts at 0
+- Critical: DNS validation using NS records instead of A records (subdomains were incorrectly marked invalid)
+- Replaced fragile grep-based JSON parsing with jq in DNS validation
+- Simplified `release_lock()` — removed broken `/proc` filesystem check
+- Replaced GNU-only `find -printf` with `stat -c` in cache cleanup
+
+### Changed
+- **BREAKING**: Dropped macOS support — Linux only (Debian 10+, Ubuntu 20.04+)
+- Removed unused GNU `parallel` dependency; added `flock` to dependency check
+- Replaced `grep -P` (PCRE) with `grep -E` (ERE) for broader Linux compatibility
+
 ## [2.0.0] - 2026-01-15
 
 ### Changed

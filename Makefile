@@ -70,7 +70,7 @@ deps:
 	@echo "$(CYAN)Checking dependencies...$(RESET)"
 	@command -v curl >/dev/null 2>&1 || { echo "$(RED)✗ curl not found$(RESET)"; exit 1; }
 	@command -v jq >/dev/null 2>&1 || { echo "$(RED)✗ jq not found$(RESET)"; exit 1; }
-	@command -v parallel >/dev/null 2>&1 || { echo "$(RED)✗ parallel not found$(RESET)"; exit 1; }
+	@command -v flock >/dev/null 2>&1 || { echo "$(RED)✗ flock not found (install util-linux)$(RESET)"; exit 1; }
 	@echo "$(GREEN)✓ All dependencies found$(RESET)"
 
 ## setup: Create local working directory with config files

@@ -58,4 +58,4 @@ jobs:
       - name: Test make targets
         run: |
           make check
-          make deps || true  # May fail if parallel not installed
+          make deps || true  # May fail if flock not installed

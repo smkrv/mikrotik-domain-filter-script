@@ -2,7 +2,7 @@
 
 ## System Requirements  
 - Bash version: >= 4.0  
-- Operating System: Ubuntu 20.04+ / Debian 10+ / macOS 10.15+  
+- Operating System: Ubuntu 20.04+ / Debian 10+ (Linux only)  
 - Minimum disk space: 100MB for logs and cache  
 - Internet connection for downloading domain lists  
 
@@ -12,24 +12,9 @@
 - grep (GNU grep >= 3.0) - for text processing  
 - awk (GNU awk >= 5.0) - for text processing  
 - sort (GNU coreutils) - for list sorting  
-- parallel (GNU parallel >= 20200522) - for parallel processing  
 - md5sum (GNU coreutils) - for checksum verification  
 - flock (util-linux) - for file locking  
 - find (GNU findutils) - for file operations  
-
-### macOS Users  
-macOS ships with BSD versions of utilities. Install GNU versions via Homebrew:  
-```bash
-brew install coreutils grep gawk findutils parallel
-```
-
-Add to your `~/.zshrc` or `~/.bashrc`:  
-```bash
-export PATH="/opt/homebrew/opt/coreutils/libexec/gnubin:$PATH"
-export PATH="/opt/homebrew/opt/grep/libexec/gnubin:$PATH"
-export PATH="/opt/homebrew/opt/gawk/libexec/gnubin:$PATH"
-export PATH="/opt/homebrew/opt/findutils/libexec/gnubin:$PATH"
-```
 
 ## Optional Dependencies   
 - logrotate - for log management  
