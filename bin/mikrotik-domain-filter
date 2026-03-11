@@ -932,6 +932,13 @@ process_domains() {
         fi
     done < "$input"
 
+    # Sort registry by level count (ascending) so parents are classified before children
+    if ! sort -t' ' -k2,2n -k1,1 "$domain_registry" > "${domain_registry}.sorted"; then
+        log "ERROR: Failed to sort domain registry"
+        return 1
+    fi
+    mv "${domain_registry}.sorted" "$domain_registry"
+
     # Second pass - classify domains
     while IFS=' ' read -r domain levels; do
         local parts
