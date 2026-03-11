@@ -1619,42 +1619,32 @@ check_updates_needed() {
     fi
 
     # Compare current and previous states
-    if [[ -f "$previous_md5" ]]; then
-        local changed=false
-        while IFS=' ' read -r source md5; do
-            local prev_line
-            prev_line=$(grep -F "${source} " "$previous_md5" || echo "")
+    local changed=false
+    while IFS=' ' read -r source md5; do
+        local prev_line
+        prev_line=$(grep -F "${source} " "$previous_md5" || echo "")
 
-            if [[ -z "$prev_line" ]]; then
-                changed=true
-                log "Content changed for source: $source (no previous entry)"
-            else
-                local prev_md5
-                prev_md5=$(echo "$prev_line" | awk '{print $2}')
-
-                if [[ "$md5" != "$prev_md5" ]]; then
-                    changed=true
-                    log "Content changed for source: $source"
-                    log "Previous MD5: $prev_md5"
-                    log "Current MD5: $md5"
-                fi
-            fi
-        done < "$current_md5"
-
-        # Set update_needed based on changes
-        if [[ "$changed" == "true" ]]; then
-            update_needed=true
+        if [[ -z "$prev_line" ]]; then
+            changed=true
+            log "Content changed for source: $source (no previous entry)"
         else
-            update_needed=false
+            local prev_md5
+            prev_md5=$(echo "$prev_line" | awk '{print $2}')
+
+            if [[ "$md5" != "$prev_md5" ]]; then
+                changed=true
+                log "Content changed for source: $source"
+                log "Previous MD5: $prev_md5"
+                log "Current MD5: $md5"
+            fi
         fi
-    else
+    done < "$current_md5"
+
+    # Set update_needed based on changes
+    if [[ "$changed" == "true" ]]; then
         update_needed=true
-        log "No previous state found, update needed"
-        # Create initial state file
-        if ! cp "$current_md5" "$previous_md5"; then
-            log "ERROR: Failed to create initial state file"
-            return 1
-        fi
+    else
+        update_needed=false
     fi
 
     # Force update if older than 24 hours
@@ -1964,7 +1954,6 @@ parse_arguments "$@"
 
 if ! main "$@"; then
     error "Script terminated with error"
-    exit 1
 fi
 
 exit 0
