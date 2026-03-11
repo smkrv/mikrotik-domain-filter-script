@@ -1,6 +1,6 @@
 <div align="center">  
 
-[![GitHub last commit](https://img.shields.io/github/last-commit/smkrv/mikrotik-domain-filter-script.svg?style=flat-square)](https://github.com/smkrv/mikrotik-domain-filter-script/commits) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT) [![RouterOS](https://img.shields.io/badge/RouterOS-7.17-blue?style=flat-square)](https://help.mikrotik.com/docs/display/ROS/RouterOS) [![RouterOS](https://img.shields.io/badge/RouterOS-6.17-blue?style=flat-square)](https://help.mikrotik.com/docs/display/ROS/RouterOS) ![Status](https://img.shields.io/badge/Status-Production-green?style=flat-square) [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=flat-square&logo=Cloudflare&logoColor=white)](https://www.cloudflare.com/) [![Debian](https://img.shields.io/badge/Debian-12%20Bookworm-red?style=flat-square&logo=debian&logoColor=white)](https://www.debian.org/releases/bookworm/) [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.10-orange?style=flat-square&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.10/) [![Ubuntu LTS](https://img.shields.io/badge/Ubuntu%20LTS-22.04-orange?style=flat-square&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/) [![ShellCheck](https://img.shields.io/badge/ShellCheck-passing-success?style=flat-square&logo=gnu-bash&logoColor=white)](https://github.com/smkrv/mikrotik-domain-filter-script/actions/workflows/shellcheck.yml) ![English](https://img.shields.io/badge/en-English-blue?style=flat-square)
+[![GitHub last commit](https://img.shields.io/github/last-commit/smkrv/mikrotik-domain-filter-script.svg?style=flat-square)](https://github.com/smkrv/mikrotik-domain-filter-script/commits) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT) [![RouterOS](https://img.shields.io/badge/RouterOS-7.20.6-blue?style=flat-square)](https://help.mikrotik.com/docs/display/ROS/RouterOS) [![RouterOS](https://img.shields.io/badge/RouterOS-6.17-blue?style=flat-square)](https://help.mikrotik.com/docs/display/ROS/RouterOS) ![Status](https://img.shields.io/badge/Status-Production-green?style=flat-square) [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=flat-square&logo=Cloudflare&logoColor=white)](https://www.cloudflare.com/) [![Debian](https://img.shields.io/badge/Debian-12%20Bookworm-red?style=flat-square&logo=debian&logoColor=white)](https://www.debian.org/releases/bookworm/) [![Ubuntu LTS](https://img.shields.io/badge/Ubuntu%20LTS-22.04-orange?style=flat-square&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/) [![ShellCheck](https://img.shields.io/badge/ShellCheck-passing-success?style=flat-square&logo=gnu-bash&logoColor=white)](https://github.com/smkrv/mikrotik-domain-filter-script/actions/workflows/shellcheck.yml) ![English](https://img.shields.io/badge/en-English-blue?style=flat-square)
 
 
   <img src="/docs/images/logo@2x.png" alt="Mikrotik Domain Filter Script" style="width: 70%; max-width: 960px; max-height: 480px; aspect-ratio: 16/9; object-fit: contain;"/>
@@ -22,7 +22,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 
 >  **Prerequisites**
 > - Linux system (Debian 10+, Ubuntu 20.04+)
-> - Install dependencies: `sudo apt-get install curl jq gawk grep`
+> - Install dependencies: `sudo apt-get install curl jq gawk grep util-linux`
 >
 > **Quick Start with Make**
 > ```bash
@@ -72,7 +72,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 15. [Important Notes](#important-notes)
 16. [Script Workflow Diagram](#script-workflow-diagram)
 17. [Prerequisites](#prerequisites)
-18. [Benchmarking](#benchmarking-%EF%B8%8F-)
+18. [Benchmarking](#benchmarking)
 19. [MikroTik Router Configuration](#mikrotik-router-configuration)
 
 ---
@@ -84,7 +84,7 @@ Lastly, the script can also aid in generating DNS FWD records, making it a compr
 - **Logging**: A logging mechanism is set up to record events and errors in a log file.
 - **Lock Mechanism**: A file lock is used to ensure that only one instance of the script runs at a time, preventing conflicts.
 - **Directory Initialization**: Required directories are checked and created if they don’t exist.
-- **Dependency Check**: The script verifies the presence of required system tools like `curl`, `jq`, `grep`, `awk`, `sort`, and `flock`.
+- **Dependency Check**: The script verifies the presence of required system tools: `curl`, `jq`, `grep`, `awk`, `sort`, `flock`, `find`, and `md5sum`.
 
 ### File Checks and Cleanup
 
@@ -454,9 +454,10 @@ GIST_ID_SPECIAL="your_special_gist_id"
 - `jq` for JSON processing
 
 #### Notes
-- The `.env` file provides a secure way to manage sensitive tokens
+- The `.env` file must have restricted permissions (`chmod 600`) — the script warns if permissions are too open
 - Environment variables can also be set directly in the shell
 - Set `EXPORT_GISTS=false` to disable Gist updates
+- All numeric values are validated; GIST_ID is validated as hex (20-32 chars)
 
 ---
 
@@ -466,7 +467,7 @@ GIST_ID_SPECIAL="your_special_gist_id"
 mikrotik-domain-filter-script/
 ├── .github/
 │   └── workflows/
-│       └── shellcheck.yml          # CI/CD workflow for linting
+│       └── shellcheck.yml          # CI/CD: ShellCheck, syntax, Makefile, bats tests
 ├── bin/
 │   └── mikrotik-domain-filter      # Main domain filtering script
 ├── config/
@@ -479,11 +480,17 @@ mikrotik-domain-filter-script/
 │   └── REQUIREMENTS.md             # System requirements documentation
 ├── routeros/
 │   └── dns-static-updater.rsc      # MikroTik RouterOS script
+├── tests/
+│   ├── test_helpers.bash           # Bats test helper functions
+│   ├── test_validate_domain.bats   # Domain validation tests
+│   └── test_extract_domains.bats   # Domain extraction tests
 ├── .editorconfig                   # Editor configuration
 ├── .gitignore                      # Git ignore rules
+├── CHANGELOG.md                    # Version changelog
 ├── CODE_OF_CONDUCT.md
 ├── LICENSE                         # MIT License
 ├── Makefile                        # Build and installation commands
+├── VERSION                         # Semantic version file
 └── README.md
 ```
 
@@ -496,7 +503,7 @@ Before running the script, ensure your system meets the requirements in [docs/RE
 **Quick Dependencies Installation (Ubuntu/Debian):**
 ```bash
 sudo apt-get update
-sudo apt-get install curl jq gawk grep
+sudo apt-get install curl jq gawk grep util-linux
 ```
 
 #### Installation Options
@@ -562,10 +569,12 @@ bin/mikrotik-domain-filter --version
 ```
 
 #### Important Notes
-- **⚠️ Test first, backup always, deploy confidently! 🛡️**
+- **Test first, backup always, deploy confidently!**
 - Monitor log files (`script.log`) for issues
 - Ensure sufficient disk space for cache and logs
-- The script uses file locking to prevent concurrent runs
+- The script uses file locking (`flock`) to prevent concurrent runs
+- All files and directories are created with owner-only permissions (700/600)
+- HTTPS is enforced for all external connections (source downloads, DNS-over-HTTPS, GitHub API)
 
 ---
 
@@ -699,7 +708,7 @@ bin/mikrotik-domain-filter --version
 
 This workflow ensures reliable and efficient domain list processing while maintaining data integrity and handling errors gracefully.
 
-### Benchmarking ⏱️ 📈
+### Benchmarking
 
 > **Environment**: Amazon Lightsail (512 MB RAM, 2 vCPUs, 20 GB SSD, Debian 12.8)  
 > **Processing**: 86K domains + 12K whitelist + 2.7K special → 1,970 unique (main) + 431 unique (special)  
@@ -707,11 +716,11 @@ This workflow ensures reliable and efficient domain list processing while mainta
 
 ### MikroTik Router Configuration
 
-#### System Requirements  
-- RouterOS version 6.17 or higher  
-- Sufficient storage space for DNS list download  
-- Memory available for DNS records processing  
-- Internet connection for fetching domain lists  
+#### System Requirements
+- RouterOS version 6.17 or higher (tested on 6.17 and 7.20.6)
+- Sufficient storage space for DNS list download
+- Memory available for DNS records processing
+- Internet connection for fetching domain lists
 
 #### Router Setup  
 1. Import `dns-static-updater.rsc` to your MikroTik RouterOS  
@@ -735,10 +744,11 @@ The script requires configuration of the following variables:
 4. Ensure the domain list file is accessible via the specified URL  
 
 #### Important Notes  
-- Use caution when adding large domain lists (beyond a few hundred domains)  
-- Large lists might cause memory issues on some devices  
-- The script adds a 10ms delay between operations to prevent resource exhaustion  
-- Monitor system resources during initial setup with large lists  
+- Use caution when adding large domain lists (beyond a few hundred domains)
+- The script enforces a configurable entry limit (default: 5000) to prevent memory exhaustion
+- The script adds a 10ms delay between operations to prevent resource exhaustion
+- TLS certificate verification is enabled (`check-certificate=yes`)
+- Monitor system resources during initial setup with large lists
 
 For more details about DNS configuration in RouterOS, see: [MikroTik DNS Documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Introduction)
 
