@@ -8,7 +8,8 @@ load_script_functions() {
     temp_script=$(mktemp)
     sed -e '/^parse_arguments "\$@"/,$d' -e 's/^set -e$//' "$(dirname "$BATS_TEST_DIRNAME")/bin/mikrotik-domain-filter" > "$temp_script"
     # Set required variables
-    export WORK_DIR=$(mktemp -d)
+    WORK_DIR=$(mktemp -d)
+    export WORK_DIR
     export TMP_DIR="${WORK_DIR}/tmp"
     export CACHE_DIR="${WORK_DIR}/cache"
     export STATE_DIR="${WORK_DIR}/state"

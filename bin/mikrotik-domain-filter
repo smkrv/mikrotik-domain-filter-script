@@ -938,7 +938,11 @@ process_domains() {
         log "ERROR: Failed to sort domain registry"
         return 1
     fi
-    mv "${domain_registry}.sorted" "$domain_registry"
+    if ! mv "${domain_registry}.sorted" "$domain_registry"; then
+        log "ERROR: Failed to rename sorted domain registry"
+        rm -f "${domain_registry}.sorted"
+        return 1
+    fi
 
     # Second pass - classify domains
     while IFS=' ' read -r domain levels; do
@@ -1160,8 +1164,9 @@ apply_whitelist() {
 
     # Apply whitelist patterns
     if [[ -s "$temp_pattern" ]]; then
+        local grep_exit
         grep -vf "$temp_pattern" "$input" > "$temp_output" || {
-            local grep_exit=$?
+            grep_exit=$?
             if [[ $grep_exit -eq 1 ]]; then
                 log "WARNING: All domains matched whitelist, output is empty"
                 : > "$temp_output"
@@ -1238,8 +1243,9 @@ check_intersections() {
         done < "$temp_intersect"
 
         # Remove intersecting domains from main list
+        local grep_exit
         grep -vFf "$temp_intersect" "$main_list" > "$temp_main" || {
-            local grep_exit=$?
+            grep_exit=$?
             if [[ $grep_exit -eq 1 ]]; then
                 log "WARNING: All main domains are in special list"
                 : > "$temp_main"
@@ -1485,10 +1491,18 @@ update_gists() {
         local payload_file content_file
         payload_file=$(mktemp "${TMP_DIR}/payload.XXXXXX")
         content_file=$(mktemp "${TMP_DIR}/content.XXXXXX")
-        jq -Rs '.' "$OUTPUT_FILE" > "$content_file"
-        jq -n --arg filename "$(basename "$OUTPUT_FILE")" \
+        if ! jq -Rs '.' "$OUTPUT_FILE" > "$content_file"; then
+            log "ERROR: Failed to encode main list content"
+            rm -f "$content_file" "$payload_file"
+            return 1
+        fi
+        if ! jq -n --arg filename "$(basename "$OUTPUT_FILE")" \
               --slurpfile content "$content_file" \
-              '{"files": {($filename): {"content": $content[0]}}}' > "$payload_file"
+              '{"files": {($filename): {"content": $content[0]}}}' > "$payload_file"; then
+            log "ERROR: Failed to build main list payload"
+            rm -f "$content_file" "$payload_file"
+            return 1
+        fi
         rm -f "$content_file"
 
         local response
@@ -1509,10 +1523,18 @@ update_gists() {
         local payload_file content_file
         payload_file=$(mktemp "${TMP_DIR}/payload.XXXXXX")
         content_file=$(mktemp "${TMP_DIR}/content.XXXXXX")
-        jq -Rs '.' "$OUTPUT_FILESPECIAL" > "$content_file"
-        jq -n --arg filename "$(basename "$OUTPUT_FILESPECIAL")" \
+        if ! jq -Rs '.' "$OUTPUT_FILESPECIAL" > "$content_file"; then
+            log "ERROR: Failed to encode special list content"
+            rm -f "$content_file" "$payload_file"
+            return 1
+        fi
+        if ! jq -n --arg filename "$(basename "$OUTPUT_FILESPECIAL")" \
               --slurpfile content "$content_file" \
-              '{"files": {($filename): {"content": $content[0]}}}' > "$payload_file"
+              '{"files": {($filename): {"content": $content[0]}}}' > "$payload_file"; then
+            log "ERROR: Failed to build special list payload"
+            rm -f "$content_file" "$payload_file"
+            return 1
+        fi
         rm -f "$content_file"
 
         local response
