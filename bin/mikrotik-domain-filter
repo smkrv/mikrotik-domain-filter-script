@@ -893,7 +893,7 @@ process_domains() {
         return 1
     fi
 
-    if ! mkdir -p "${output_dir}"/{second,regional,other}; then
+    if ! mkdir -p "${output_dir}"; then
         log "ERROR: Failed to create output directories"
         return 1
     fi
