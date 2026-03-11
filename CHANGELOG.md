@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_updates_needed` did not strip inline comments from source files (unlike `load_lists`)
 - `update_gists` ARG_MAX risk: file content passed as command-line argument instead of temp file
 - Whitelist silently ignored 5+ level domains and non-PSL 4-level domains
+- Per-signal traps (INT=130, TERM=143) guarantee correct exit codes on interruption
+- URL whitespace validation in `load_lists` and `check_updates_needed`
+- `grep -F` substring match replaced with `awk` field match in MD5 comparison
+- `mv` error check added for sorted domain registry
+- SC2155: `local var=$()` split into declaration and assignment (grep_exit, WORK_DIR)
+- `update_gists` jq error handling with proper temp file cleanup on failure
 
 ### Removed
 - Unreachable `exit 1` after `error()` call
