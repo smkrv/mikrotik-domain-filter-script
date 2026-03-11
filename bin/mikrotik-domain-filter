@@ -1051,7 +1051,7 @@ prepare_domains_for_dns_check() {
         return 1
     fi
 
-    for file in "${input_dir}/second.txt" "${input_dir}/regional.txt"; do
+    for file in "${input_dir}/second.txt" "${input_dir}/regional.txt" "${input_dir}/other.txt"; do
         if [[ -f "$file" ]]; then
             if ! cat "$file" >> "$temp_output"; then
                 log "ERROR: Failed to append file: $file"
