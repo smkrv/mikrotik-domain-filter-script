@@ -1149,13 +1149,10 @@ apply_whitelist() {
                     echo "^${escaped}$" >> "$temp_pattern"
                 fi
                 ;;
-            4)
-                # Only exact matches for fourth-level domains
-                local base_domain="${parts[-2]}.${parts[-1]}"
+            *)
+                # 4+ level domains — exact match only
                 local escaped="${domain//./\\.}"
-                if grep -Fxq "$base_domain" "$PUBLIC_SUFFIX_FILE"; then
-                    echo "^${escaped}$" >> "$temp_pattern"
-                fi
+                echo "^${escaped}$" >> "$temp_pattern"
                 ;;
         esac
     done < "$whitelist"
