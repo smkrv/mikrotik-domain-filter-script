@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] - 2026-03-12
 
 ### Fixed
 - Critical: `set -e` + `((var++))` causing script abort when counter starts at 0
@@ -20,13 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Double cleanup/release_lock on normal exit path removed
 - Duplicate error output to stderr removed (was writing to both stdout+stderr+logfile)
 - Predictable temp file names replaced with `mktemp` XXXXXX (prevents collisions and race conditions)
-
-### Fixed (continued)
 - RouterOS script license header updated from CC BY-NC-SA 4.0 to MIT
 - `cleanup()` path matching uses glob instead of regex (safe with special chars in WORK_DIR path)
-
-### Removed
-- Dead `DNS_RATE_LIMIT` configuration variable (was exported but never used)
 
 ### Security
 - File and directory permissions tightened from world-readable (755/644) to owner-only (700/600)
@@ -47,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING**: Dropped macOS support — Linux only (Debian 10+, Ubuntu 20.04+)
 - Removed unused GNU `parallel` dependency; added `flock` to dependency check
 - Replaced `grep -P` (PCRE) with `grep -E` (ERE) for broader Linux compatibility
+
+### Removed
+- Dead `DNS_RATE_LIMIT` configuration variable (was exported but never used)
 
 ## [2.0.0] - 2026-01-15
 
@@ -96,6 +94,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.0.0...HEAD
+[2.1.0]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v1.0.7...v2.0.0
 [1.0.7]: https://github.com/smkrv/mikrotik-domain-filter-script/releases/tag/v1.0.7
