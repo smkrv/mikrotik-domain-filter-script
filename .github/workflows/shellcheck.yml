@@ -9,11 +9,13 @@ on:
     paths:
       - 'bin/**'
       - '**.sh'
+      - 'tests/**'
   pull_request:
     branches: [main]
     paths:
       - 'bin/**'
       - '**.sh'
+      - 'tests/**'
 
 jobs:
   shellcheck:
@@ -59,3 +61,18 @@ jobs:
         run: |
           make check
           make deps || true  # May fail if flock not installed
+
+  bats-test:
+    name: Bats Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install bats-core
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+
+      - name: Run bats tests
+        run: bats tests/

@@ -39,7 +39,7 @@
 
 # Step 2: Fetch the full file
 :log info "Fetching source file...";
-:local fetchResult [/tool fetch url=$url mode=https as-value output=user];
+:local fetchResult [/tool fetch url=$url mode=https check-certificate=yes as-value output=user];
 :local chunkData ($fetchResult->"data");
 :if ([:len $chunkData] = 0) do={
     :log error "Failed to fetch DNS list or source file is empty.";

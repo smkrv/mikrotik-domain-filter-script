@@ -149,7 +149,7 @@ readonly GIST_ID_SPECIAL=${GIST_ID_SPECIAL:-""} # Gist ID for special list
 
 # Add state preservation
 readonly STATE_DIR="${WORK_DIR}/state"
-readonly PREVIOUS_STATE="${STATE_DIR}/previous_state.dat"
+
 
 # Performance settings (configurable via environment variables)
 readonly MAX_PARALLEL_JOBS=${MAX_PARALLEL_JOBS:-5}
@@ -461,13 +461,6 @@ log_cache_stats() {
     log "Cache stats - Total: $total, Valid: $valid, Invalid: $invalid"
 }
 
-handle_cache_error() {
-    local domain=$1
-    log "WARNING: Cache error for domain: $domain"
-    rm -f "${CACHE_DIR}/${domain}.cache"
-    return 1
-}
-
 # Enhanced trap handling
 trap_cleanup() {
     local exit_code=$?
@@ -497,75 +490,6 @@ trap_cleanup() {
 
     log "Script terminated with exit code: ${exit_code}"
     exit "${exit_code}"
-}
-
-save_state() {
-    local temp_state
-    temp_state=$(mktemp "${STATE_DIR}/state_XXXXXX")
-    local main_md5 special_md5
-
-    log "Saving state..."
-
-    if ! [[ -d "$STATE_DIR" ]]; then
-        if ! mkdir -p "$STATE_DIR"; then
-            log "ERROR: Failed to create state directory"
-            return 1
-        fi
-        if ! chmod 700 "$STATE_DIR"; then
-            log "WARNING: Failed to set permissions for state directory"
-        fi
-    fi
-
-    # Calculate MD5 sums with error checking
-    if ! main_md5=$(md5sum "$OUTPUT_FILE" 2>/dev/null); then
-        log "ERROR: Failed to calculate MD5 for main list"
-        return 1
-    fi
-
-    if ! special_md5=$(md5sum "$OUTPUT_FILESPECIAL" 2>/dev/null); then
-        log "ERROR: Failed to calculate MD5 for special list"
-        return 1
-    fi
-
-    # Write to temporary file first
-    if ! echo "${main_md5}" > "$temp_state" || ! echo "${special_md5}" >> "$temp_state"; then
-        log "ERROR: Failed to write state data"
-        rm -f "$temp_state"
-        return 1
-    fi
-
-    # Set proper permissions
-    if ! chmod 600 "$temp_state"; then
-        log "WARNING: Failed to set permissions for state file"
-    fi
-
-    # Atomic move
-    if ! mv "$temp_state" "$PREVIOUS_STATE"; then
-        log "ERROR: Failed to update state file"
-        rm -f "$temp_state"
-        return 1
-    fi
-
-    log "State saved successfully"
-    return 0
-}
-
-# Function to handle temporary files
-handle_temp_file() {
-    local prefix="$1"
-    local suffix="${2:-tmp}"
-    local temp_file
-
-    if ! temp_file=$(mktemp "${TMP_DIR}/${prefix}_XXXXXX"); then
-        log "ERROR: Failed to create temporary file with prefix ${prefix}"
-        return 1
-    fi
-
-    if ! chmod 600 "$temp_file"; then
-        log "WARNING: Failed to set permissions for ${temp_file}"
-    fi
-
-    echo "$temp_file"
 }
 
 # Authenticated GitHub API request via temp header file (avoids token in process list)
@@ -701,8 +625,9 @@ check_domains_parallel() {
     local processed=0
 
     # Create temporary directory for atomic result writing (one file per domain)
-    local results_dir="${TMP_DIR}/dns_results_$$"
-    mkdir -p "$results_dir"
+    local results_dir
+    results_dir=$(mktemp -d "${TMP_DIR}/dns_results_XXXXXX")
+    chmod 700 "$results_dir"
 
     while IFS= read -r domain; do
         (
@@ -800,7 +725,6 @@ validate_domain() {
     [[ ${#domain} -gt 253 ]] && return 1
     return 0
 }
-export -f validate_domain
 
 # Function to extract domains from various formats
 extract_domains() {
@@ -955,23 +879,6 @@ initial_filter() {
     log "Initially filtered domains: $total"
 
     return 0
-}
-
-# Function to determine domain type
-get_domain_type() {
-    local domain=$1
-    local parts
-    IFS='.' read -ra parts <<< "$domain"
-    local levels=${#parts[@]}
-    local base="${parts[-2]}.${parts[-1]}"
-
-    if [[ $levels -eq 2 ]]; then
-        echo "second"
-    elif grep -Fxq "$base" "$PUBLIC_SUFFIX_FILE"; then
-        echo "regional"
-    else
-        echo "other"
-    fi
 }
 
 # Function to process and classify domains
@@ -1704,7 +1611,7 @@ check_updates_needed() {
         local changed=false
         while IFS=' ' read -r source md5; do
             local prev_line
-            prev_line=$(grep "^${source}[[:space:]]" "$previous_md5" || echo "")
+            prev_line=$(grep -F "${source} " "$previous_md5" || echo "")
 
             if [[ -z "$prev_line" ]]; then
                 changed=true
