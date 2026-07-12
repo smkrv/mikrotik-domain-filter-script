@@ -12,6 +12,8 @@ setup() {
     run extract_domains "$input" "$result_file"
     [ "$status" -eq 0 ]
     [ "$(wc -l < "$result_file")" -eq 2 ]
+    grep -Fxq "example.com" "$result_file"
+    grep -Fxq "google.com" "$result_file"
 }
 
 @test "extract_domains: skips comments and empty lines" {
@@ -21,6 +23,9 @@ setup() {
     run extract_domains "$input" "$result_file"
     [ "$status" -eq 0 ]
     [ "$(wc -l < "$result_file")" -eq 2 ]
+    grep -Fxq "example.com" "$result_file"
+    grep -Fxq "google.com" "$result_file"
+    ! grep -q "comment" "$result_file"
 }
 
 @test "extract_domains: handles Clash DOMAIN-SUFFIX format" {
@@ -30,6 +35,8 @@ setup() {
     run extract_domains "$input" "$result_file"
     [ "$status" -eq 0 ]
     [ "$(wc -l < "$result_file")" -eq 2 ]
+    grep -Fxq "example.com" "$result_file"
+    grep -Fxq "google.com" "$result_file"
 }
 
 @test "extract_domains: handles Clash format with leading dash" {
@@ -39,6 +46,8 @@ setup() {
     run extract_domains "$input" "$result_file"
     [ "$status" -eq 0 ]
     [ "$(wc -l < "$result_file")" -eq 2 ]
+    grep -Fxq "example.com" "$result_file"
+    grep -Fxq "google.com" "$result_file"
 }
 
 @test "extract_domains: deduplicates domains" {
@@ -48,6 +57,8 @@ setup() {
     run extract_domains "$input" "$result_file"
     [ "$status" -eq 0 ]
     [ "$(wc -l < "$result_file")" -eq 2 ]
+    grep -Fxq "example.com" "$result_file"
+    grep -Fxq "google.com" "$result_file"
 }
 
 @test "extract_domains: empty input returns error" {
