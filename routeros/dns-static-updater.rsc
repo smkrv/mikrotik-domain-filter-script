@@ -3,7 +3,7 @@
 # 1) Set :local listname to the desired address-list name.
 # 2) Set :local fwdto to the DNS address where queries should be forwarded.
 # 3) Set :local url to the raw URL that hosts the domain list.
-# This script has been tested on ROS 6.17 Stable and ROS 7.17 Stable.
+# This script has been tested on ROS 6.17 Stable and ROS 7.20.6 Stable.
 # DISCLAIMER: Use caution when adding large domain lists (beyond a few hundred domains).
 # Large lists might cause memory issues on some devices.
 # For more details, see: https://help.mikrotik.com/docs/spaces/ROS/pages/37748767/DNS#DNS-Introduction
