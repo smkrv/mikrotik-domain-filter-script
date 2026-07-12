@@ -5,11 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-13
+
+### Fixed
+- `check_intersections`: `grep -vFf` matched substrings, so removing an intersecting `example.com` also silently deleted `myexample.com` and `example.com.hk` from the main list; now `grep -vxFf` (whole-line match)
+- `check_updates_needed`: `current_md5` was never truncated between runs, so stale entries accumulated and update detection reported changes forever; now cleared at the start of each run
+- Download failure during the update check was reported as "No updates needed" with exit 0; `check_updates_needed` now distinguishes "no changes" (1) from "check failed" (2) and the script exits with an error on failure
+- `WORK_DIR` in `.env` crashed the script (`readonly variable` under `set -e`); the key is no longer accepted from `.env` (it decides where `.env` itself is read from), shell environment still works
+- `while read` loops silently dropped the last line of `sources*.txt` and `.env` when the file had no trailing newline
+- Numeric `.env` values with leading zeros (e.g. `08`) passed validation but aborted the script in arithmetic (octal parsing); now rejected with a warning
+- `log_cache_stats` used a shell glob that exceeded ARG_MAX on caches with tens of thousands of entries; now uses `find -exec`
+- `check_required_files` error message pointed to a nonexistent `scripts/` directory instead of `config/`
+- Makefile: color escape codes printed literally (`\033[36m`) because plain `echo` does not interpret them; colors are now real escape bytes
+- Makefile: `make release` always failed with shellcheck installed - `make lint` used the default severity (style) while CI uses `--severity=warning`; lint now matches CI
+- Makefile: `make lint` silently skipped linting when shellcheck was absent; now fails with a clear message
+- Makefile: `make release` tagged HEAD with uncommitted changes outside VERSION and overwrote nothing on existing tags; now requires a clean tree and refuses existing tags
+
+### Security
+- `--max-filesize` (100 MB) added to all downloads (source lists, Public Suffix List) to limit memory/disk exhaustion from a hostile source; enforced by curl when the server sends Content-Length
+- `GITHUB_TOKEN` from `.env` is no longer exported into the environment of child processes (curl, jq, grep run on untrusted downloaded data); it stays in the shell only
+
+### Changed
+- `check_dependencies` and `make deps` now verify the full tool set actually used: curl, jq, awk, grep, sort, flock, find, md5sum, comm
+- CI: removed `paths` filters - previously changes to Makefile, workflow, config, or RouterOS files bypassed all CI jobs
+- CI: `apt-get update` before ShellCheck install (parity with the bats job, avoids stale-index 404s)
+- `make test` now runs the bats suite (was a version-print smoke test that always passed)
+- RouterOS script header: tested versions aligned with README (6.17, 7.20.6)
+
+### Documentation
+- README: worked example rebuilt so every stage's output is derivable from its input; stage order now matches the code (DNS validation runs last, after whitelisting and intersection checks)
+- README: workflow diagram reordered to match the actual pipeline; removed claims about nonexistent `TOTAL_DOMAINS`/`PROCESSED_DOMAINS`/`VALID_DOMAINS` variables
+- README: project structure tree includes all test files; dependency list matches `check_dependencies`
+- README and script header rewritten without filler prose; emoji and typographic symbols removed
+- REQUIREMENTS: Bash requirement corrected to >= 4.3 (negative array subscripts); `comm` added to the tool list
+
+### Added
+- Bats test coverage for `initial_filter`, `check_intersections` (including a regression test for the substring-match fix), `prepare_domains_for_dns_check`, `validate_results`; content assertions in `extract_domains` tests; hyphen-rule tests for `validate_domain`
+
 ## [2.1.1] - 2026-03-12
 
 ### Fixed
 - Critical: domains classified as "other" (standalone subdomains) were silently dropped from DNS check
-- Critical: domain classification order-dependent — children processed before parents due to alphabetical sort
+- Critical: domain classification order-dependent - children processed before parents due to alphabetical sort
 - Critical: `trap_cleanup` always exited with code 0 (signal exit code masked by `log` return value)
 - `check_updates_needed` did not strip inline comments from source files (unlike `load_lists`)
 - `update_gists` ARG_MAX risk: file content passed as command-line argument instead of temp file
@@ -32,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Critical: `set -e` + `((var++))` causing script abort when counter starts at 0
 - Critical: DNS validation using NS records instead of A records (subdomains were incorrectly marked invalid)
 - Replaced fragile grep-based JSON parsing with jq in DNS validation
-- Simplified `release_lock()` — removed broken `/proc` filesystem check
+- Simplified `release_lock()` - removed broken `/proc` filesystem check
 - Replaced GNU-only `find -printf` with `stat -c` in cache cleanup
 - `grep -v` exit code 1 no longer treated as error when all lines filtered by whitelist
 - Empty `update_state.dat` no longer causes arithmetic error on first run
@@ -60,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed: Gist payload written to temp file to avoid ARG_MAX limits on large domain lists
 
 ### Changed
-- **BREAKING**: Dropped macOS support — Linux only (Debian 10+, Ubuntu 20.04+)
+- **BREAKING**: Dropped macOS support - Linux only (Debian 10+, Ubuntu 20.04+)
 - Removed unused GNU `parallel` dependency; added `flock` to dependency check
 - Replaced `grep -P` (PCRE) with `grep -E` (ERE) for broader Linux compatibility
 
@@ -115,6 +152,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[2.2.0]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v1.0.7...v2.0.0
