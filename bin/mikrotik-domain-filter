@@ -6,19 +6,14 @@ set -e
 # @github: https://github.com/smkrv/mikrotik-domain-filter-script
 # @source: https://github.com/smkrv/mikrotik-domain-filter-script
 #
-# Mikrotik Domain Filter Script is a robust Bash solution primarily designed
-# for filtering and processing domain lists for Mikrotik devices, enabling
-# straightforward management of blocklists or allowlists.
+# Filters and processes domain lists for Mikrotik RouterOS: downloads source
+# lists, classifies domains (second-level / regional / other), applies a
+# whitelist, validates domains via Cloudflare DoH, and publishes the results
+# to output files and optionally to GitHub Gists. Suited for blocklists,
+# allowlists, Adlists, DNS Static and DNS FWD entries.
 #
-# For a detailed description, please visit the GitHub repository:
+# Detailed documentation:
 # https://github.com/smkrv/mikrotik-domain-filter-script
-#
-# By combining domain classification, DNS validation, and whitelist handling,
-# this tool offers a comprehensive workflow to create accurate and reliable
-# filtered lists, ensuring efficient network policy enforcement. It is also
-# suitable for building and maintaining Adlists by returning 0.0.0.0 for
-# domains serving advertisements, integrating seamlessly with DNS Static in
-# Mikrotik RouterOS, and aiding in generating DNS FWD records.
 
 # Enable debugging
 # set -x
@@ -69,22 +64,22 @@ readonly OUTPUT_FILESPECIAL="${WORK_DIR}/filtered_domains_special_mikrotik.txt"
 
 # Load environment variables from .env file if it exists
 if [[ -f "${WORK_DIR}/.env" ]]; then
-    # Allowed environment variable names (whitelist)
+    # Allowed environment variable names (whitelist).
+    # WORK_DIR is deliberately absent: .env is read from ${WORK_DIR}/.env,
+    # and WORK_DIR is already readonly by this point.
     declare -A ALLOWED_ENV_KEYS=(
         [EXPORT_GISTS]=1
         [GITHUB_TOKEN]=1
         [GIST_ID_MAIN]=1
         [GIST_ID_SPECIAL]=1
-        [WORK_DIR]=1
         [MAX_PARALLEL_JOBS]=1
         [DNS_TIMEOUT]=1
         [DNS_MAX_RETRIES]=1
-
         [CACHE_TTL_DAYS]=1
     )
 
     # shellcheck disable=SC1090
-    while IFS='=' read -r key value; do
+    while IFS='=' read -r key value || [[ -n "$key" ]]; do
         # Skip comments and empty lines
         [[ $key =~ ^[[:space:]]*#.*$ ]] && continue
         [[ -z "$key" ]] && continue
@@ -101,18 +96,29 @@ if [[ -f "${WORK_DIR}/.env" ]]; then
             echo "WARNING: Unknown env key ignored: $key" >&2
             continue
         fi
-        # Remove quotes and export variable
+        # Remove quotes and assign
         value="${value%\"}"
         value="${value#\"}"
         value="${value%\'}"
         value="${value#\'}"
-        export "$key=$value"
+        if [[ "$key" == "GITHUB_TOKEN" ]]; then
+            # Keep the token out of the environment of child processes
+            # (curl, jq, grep run on untrusted downloaded data)
+            printf -v "$key" '%s' "$value"
+        else
+            export "$key=$value"
+        fi
     done < "${WORK_DIR}/.env"
 
-    # Validate numeric .env values (must be positive integers)
+    # Validate numeric .env values (must be positive integers).
+    # Leading zeros are rejected before any arithmetic: bash would read them
+    # as octal ("08" even aborts with "value too great for base").
     for _env_var in DNS_TIMEOUT DNS_MAX_RETRIES MAX_PARALLEL_JOBS CACHE_TTL_DAYS; do
         if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[0-9]+$ ]]; then
             echo "WARNING: Invalid numeric value for $_env_var='${!_env_var}', ignoring" >&2
+            unset "$_env_var"
+        elif [[ -n "${!_env_var:-}" && "${!_env_var}" =~ ^0[0-9]+$ ]]; then
+            echo "WARNING: Leading zeros in $_env_var='${!_env_var}', ignoring" >&2
             unset "$_env_var"
         elif [[ -n "${!_env_var:-}" && "${!_env_var}" -eq 0 ]]; then
             echo "WARNING: $_env_var cannot be 0, ignoring" >&2
@@ -162,6 +168,10 @@ readonly CACHE_TTL_DAYS=${CACHE_TTL_DAYS:-90}
 readonly CACHE_TTL_SECONDS=$((CACHE_TTL_DAYS * 24 * 60 * 60))
 readonly CACHE_MAX_SIZE_MB=1024
 
+# Download limit for source lists and the Public Suffix List (100 MB).
+# curl enforces it only when the server sends Content-Length.
+readonly MAX_DOWNLOAD_BYTES=104857600
+
 # Time thresholds
 readonly PSL_UPDATE_DAYS=7
 readonly FORCE_UPDATE_SECONDS=86400  # 24 hours
@@ -189,8 +199,8 @@ USAGE:
     $(basename "$0") [OPTIONS]
 
 DESCRIPTION:
-    A robust Bash solution for filtering and processing domain lists for Mikrotik devices,
-    enabling straightforward management of blocklists or allowlists.
+    Filters and processes domain lists for Mikrotik RouterOS: classification,
+    whitelist handling, DNS validation, optional GitHub Gist export.
 
 OPTIONS:
     -h, --help      Show this help message and exit
@@ -208,11 +218,16 @@ CONFIGURATION:
     - .env                  Environment configuration
 
 ENVIRONMENT VARIABLES:
-    WORK_DIR                Override working directory
-    EXPORT_GISTS           Enable GitHub Gist exports (true/false)
-    GITHUB_TOKEN           GitHub Personal Access Token
-    GIST_ID_MAIN           Main list Gist ID
-    GIST_ID_SPECIAL        Special list Gist ID
+    WORK_DIR                Override working directory (shell environment only,
+                            not settable via .env)
+    EXPORT_GISTS            Enable GitHub Gist exports (true/false)
+    GITHUB_TOKEN            GitHub Personal Access Token
+    GIST_ID_MAIN            Main list Gist ID
+    GIST_ID_SPECIAL         Special list Gist ID
+    MAX_PARALLEL_JOBS       Parallel DNS checks (default: 5)
+    DNS_TIMEOUT             DNS query timeout in seconds (default: 10)
+    DNS_MAX_RETRIES         DNS query retries (default: 3)
+    CACHE_TTL_DAYS          DNS cache TTL in days (default: 90)
 
 For detailed documentation, visit:
 https://github.com/smkrv/mikrotik-domain-filter-script
@@ -260,7 +275,7 @@ check_required_files() {
     if [[ ${#missing_files[@]} -gt 0 ]]; then
         echo "ERROR: Missing required files:"
         printf '  - %s\n' "${missing_files[@]}"
-        echo "Please create these files or copy from .example templates in scripts/ directory"
+        echo "Please create these files or copy from .example templates in the config/ directory"
         exit 1
     fi
     return 0
@@ -303,7 +318,7 @@ release_lock() {
     rm -f "$LOCK_FILE"
 }
 
-# Signal handling — use per-signal traps for guaranteed exit codes
+# Signal handling - per-signal traps for guaranteed exit codes
 trap 'log "Script interrupted (SIGINT)"; trap_cleanup 130' INT
 trap 'log "Script interrupted (SIGTERM)"; trap_cleanup 143' TERM
 
@@ -337,7 +352,7 @@ init_directories() {
             if ! mkdir -p "$dir"; then
                 error "Failed to create directory ${dir}"
             fi
-            # Set proper permissions (rwxr-xr-x)
+            # Owner-only permissions (rwx------)
             if ! chmod 700 "$dir"; then
                 log "WARNING: Failed to set permissions for ${dir}"
             fi
@@ -456,9 +471,10 @@ cleanup_invalid_cache() {
 
 log_cache_stats() {
     local total valid invalid
+    # find -exec batches arguments; a glob here would exceed ARG_MAX on large caches
     total=$(find "$CACHE_DIR" -type f -name "*.cache" | wc -l)
-    valid=$(grep -l "^valid$" "$CACHE_DIR"/*.cache 2>/dev/null | wc -l)
-    invalid=$(grep -l "^invalid$" "$CACHE_DIR"/*.cache 2>/dev/null | wc -l)
+    valid=$(find "$CACHE_DIR" -type f -name "*.cache" -exec grep -l "^valid$" {} + 2>/dev/null | wc -l)
+    invalid=$(find "$CACHE_DIR" -type f -name "*.cache" -exec grep -l "^invalid$" {} + 2>/dev/null | wc -l)
     log "Cache stats - Total: $total, Valid: $valid, Invalid: $invalid"
 }
 
@@ -530,7 +546,7 @@ github_api_request() {
 
 # Function to check dependencies
 check_dependencies() {
-    local deps=(curl jq awk grep flock)
+    local deps=(curl jq awk grep sort flock find md5sum comm)
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             error "Required dependency: $dep"
@@ -549,7 +565,6 @@ check_domain() {
     fi
 
     local retry_count=0
-    local success=false
     local cache_file="${CACHE_DIR}/${domain}.cache"
 
     if [[ -f "$cache_file" ]]; then
@@ -573,7 +588,7 @@ check_domain() {
         fi
     fi
 
-    while [[ $retry_count -lt $DNS_MAX_RETRIES && $success == false ]]; do
+    while [[ $retry_count -lt $DNS_MAX_RETRIES ]]; do
         [[ $retry_count -gt 0 ]] && sleep 2
 
         if curl --connect-timeout "$DNS_TIMEOUT" --max-time "$DNS_TIMEOUT" -s -f \
@@ -581,7 +596,6 @@ check_domain() {
             "https://cloudflare-dns.com/dns-query?name=${domain}&type=A" | \
             jq -e '.Status == 0 and (.Answer | length > 0)' >/dev/null 2>&1; then
             echo "valid" > "$cache_file"
-            success=true
             return 0
         fi
 
@@ -695,7 +709,7 @@ load_public_suffix_list() {
         log "Updating Public Suffix List..."
         local temp_psl="${PUBLIC_SUFFIX_FILE}.tmp"
         
-        if ! curl --proto '=https' -sSL --max-time 60 "https://publicsuffix.org/list/public_suffix_list.dat" -o "$temp_psl"; then
+        if ! curl --proto '=https' -sSL --max-time 60 --max-filesize "$MAX_DOWNLOAD_BYTES" "https://publicsuffix.org/list/public_suffix_list.dat" -o "$temp_psl"; then
             log "ERROR: Failed to download Public Suffix List"
             [[ -f "$PUBLIC_SUFFIX_FILE" ]] && return 0  # Use existing file
             error "No Public Suffix List available. Check internet connection."
@@ -1155,7 +1169,7 @@ apply_whitelist() {
                 fi
                 ;;
             *)
-                # 4+ level domains — exact match only
+                # 4+ level domains - exact match only
                 local escaped="${domain//./\\.}"
                 echo "^${escaped}$" >> "$temp_pattern"
                 ;;
@@ -1242,9 +1256,10 @@ check_intersections() {
             log "Moving domain to special list: $domain"
         done < "$temp_intersect"
 
-        # Remove intersecting domains from main list
+        # Remove intersecting domains from main list (whole-line match:
+        # without -x, example.com would also remove myexample.com)
         local grep_exit
-        grep -vFf "$temp_intersect" "$main_list" > "$temp_main" || {
+        grep -vxFf "$temp_intersect" "$main_list" > "$temp_main" || {
             grep_exit=$?
             if [[ $grep_exit -eq 1 ]]; then
                 log "WARNING: All main domains are in special list"
@@ -1283,7 +1298,7 @@ load_lists() {
         return 1
     fi
 
-    while read -r source; do
+    while read -r source || [[ -n "$source" ]]; do
         # Skip empty lines and comments (handle inline comments too)
         source="${source%%#*}"  # Remove inline comments
         source="${source#"${source%%[![:space:]]*}"}"  # Trim leading whitespace
@@ -1297,7 +1312,7 @@ load_lists() {
             continue
         fi
 
-        # Validate URL scheme — only HTTPS allowed
+        # Validate URL scheme - only HTTPS allowed
         if [[ ! "$source" =~ ^https:// ]]; then
             log "WARNING: Skipping non-HTTPS source: $source"
             ((failed_count++)) || true
@@ -1306,7 +1321,8 @@ load_lists() {
 
         log "Loading from source: $source"
         local response
-        if response=$(curl --proto '=https' -sSL --max-time 30 --retry 3 --retry-delay 2 "$source" 2>/dev/null); then
+        if response=$(curl --proto '=https' -sSL --max-time 30 --retry 3 --retry-delay 2 \
+            --max-filesize "$MAX_DOWNLOAD_BYTES" "$source" 2>/dev/null); then
             if [[ -n "$response" ]]; then
                 echo "$response" | tr -s '[:space:]' '\n' >> "$output"
                 ((loaded_count++)) || true
@@ -1553,6 +1569,7 @@ update_gists() {
 }
 
 # Function to check if update is needed
+# Returns: 0 = update needed, 1 = no changes, 2 = check failed
 check_updates_needed() {
     local state_file="${STATE_DIR}/update_state.dat"
     local temp_dir="${TMP_DIR}/downloads"
@@ -1564,7 +1581,7 @@ check_updates_needed() {
 
     if ! mkdir -p "$temp_dir"; then
         log "ERROR: Failed to create temporary directory"
-        return 1
+        return 2
     fi
 
     if ! chmod 700 "$temp_dir"; then
@@ -1575,12 +1592,16 @@ check_updates_needed() {
     for file in "$current_md5" "$previous_md5"; do
         if ! touch "$file" 2>/dev/null; then
             log "ERROR: Cannot create file: ${file}"
-            return 1
+            return 2
         fi
         if ! chmod 600 "$file" 2>/dev/null; then
             log "WARNING: Failed to set permissions for ${file}"
         fi
     done
+
+    # Start each run with an empty current_md5: entries below are appended,
+    # and leftovers from a previous run would defeat the MD5 comparison
+    : > "$current_md5"
 
     download_and_check() {
         local source=$1
@@ -1588,7 +1609,8 @@ check_updates_needed() {
         temp_file="${temp_dir}/$(echo "$source" | md5sum | cut -d' ' -f1)"
 
         log "Downloading: $source"
-        if ! curl --proto '=https' -sSL --max-time 30 --retry 3 --retry-delay 2 "$source" -o "$temp_file"; then
+        if ! curl --proto '=https' -sSL --max-time 30 --retry 3 --retry-delay 2 \
+            --max-filesize "$MAX_DOWNLOAD_BYTES" "$source" -o "$temp_file"; then
             log "WARNING: Failed to download $source"
             return 1
         fi
@@ -1621,7 +1643,7 @@ check_updates_needed() {
     local process_failed=false
     for source_file in "$SOURCES_FILE" "$SOURCESSPECIAL_FILE" "$WHITELIST_FILE"; do
         if [[ -f "$source_file" ]]; then
-            while IFS= read -r source; do
+            while IFS= read -r source || [[ -n "$source" ]]; do
                 source="${source%%#*}"
                 source="${source#"${source%%[![:space:]]*}"}"
                 source="${source%"${source##*[![:space:]]}"}"
@@ -1631,7 +1653,7 @@ check_updates_needed() {
                     log "WARNING: Skipping source with whitespace in update check: $source"
                     continue
                 fi
-                # Validate URL scheme — only HTTPS allowed
+                # Validate URL scheme - only HTTPS allowed
                 if [[ ! "$source" =~ ^https:// ]]; then
                     log "WARNING: Skipping non-HTTPS source in update check: $source"
                     continue
@@ -1647,7 +1669,7 @@ check_updates_needed() {
     if [[ "$process_failed" == "true" ]]; then
         log "ERROR: Failed to process one or more sources"
         find "$temp_dir" -type f ! -name "*md5" -delete 2>/dev/null || :
-        return 1
+        return 2
     fi
 
     # Compare current and previous states
@@ -1692,10 +1714,10 @@ check_updates_needed() {
     if [[ "$update_needed" == "true" ]]; then
         if ! cp "$current_md5" "$previous_md5"; then
             log "ERROR: Failed to update MD5 checksums"
-            return 1
+            return 2
         fi
 
-        if ! echo "$(date +%s)" > "$state_file"; then
+        if ! date +%s > "$state_file"; then
             log "WARNING: Failed to save update state"
         fi
 
@@ -1790,11 +1812,8 @@ main() {
         return 1
     fi
 
-    # Check dependencies
-    if ! check_dependencies; then
-        error "Missing required dependencies"
-        return 1
-    fi
+    # Check dependencies (error() exits the script on failure)
+    check_dependencies
 
     # Acquire lock
     if ! acquire_lock; then
@@ -1811,8 +1830,14 @@ main() {
 
     log "Starting main processing..."
 
-    # Check if update is needed
-    if ! check_updates_needed; then
+    # Check if update is needed (0 = update, 1 = no changes, 2 = check failed)
+    local update_rc=0
+    check_updates_needed || update_rc=$?
+    if [[ $update_rc -eq 2 ]]; then
+        log "ERROR: Update check failed"
+        release_lock
+        return 1
+    elif [[ $update_rc -ne 0 ]]; then
         log "No updates needed, exiting gracefully"
         cleanup
         cleanup_invalid_cache
@@ -1981,6 +2006,8 @@ main() {
 # Main execution
 parse_arguments "$@"
 
+# Note: `set -e` is suspended inside an if-condition (bash semantics), so main()
+# relies on its explicit per-step error checks, not on errexit.
 if ! main "$@"; then
     error "Script terminated with error"
 fi
