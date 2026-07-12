@@ -48,8 +48,9 @@ ehthumbs.db
 *.swo
 *~
 
-# Internal docs (plans, audit notes)
+# Internal docs (plans, audit notes, session handoffs)
 docs/plans/
+handoff.*.md
 
 # Archives
 *.tar.gz
