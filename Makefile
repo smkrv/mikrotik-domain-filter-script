@@ -15,12 +15,12 @@ SYSCONFDIR ?= /etc/mikrotik-domain-filter
 # Script name
 SCRIPT_NAME := mikrotik-domain-filter
 
-# Colors for output
-CYAN := \033[36m
-GREEN := \033[32m
-YELLOW := \033[33m
-RED := \033[31m
-RESET := \033[0m
+# Colors for output (real escape bytes: plain echo does not interpret \033)
+CYAN := $(shell printf '\033[36m')
+GREEN := $(shell printf '\033[32m')
+YELLOW := $(shell printf '\033[33m')
+RED := $(shell printf '\033[31m')
+RESET := $(shell printf '\033[0m')
 
 .PHONY: help version install uninstall check deps setup run clean test lint \
         bump-patch bump-minor bump-major
@@ -65,12 +65,14 @@ check:
 	@echo "$(CYAN)Checking script syntax...$(RESET)"
 	@bash -n bin/$(SCRIPT_NAME) && echo "$(GREEN)✓ Syntax OK$(RESET)"
 
-## deps: Check and install dependencies
+## deps: Check dependencies (same set as the script's runtime check)
 deps:
 	@echo "$(CYAN)Checking dependencies...$(RESET)"
-	@command -v curl >/dev/null 2>&1 || { echo "$(RED)✗ curl not found$(RESET)"; exit 1; }
-	@command -v jq >/dev/null 2>&1 || { echo "$(RED)✗ jq not found$(RESET)"; exit 1; }
-	@command -v flock >/dev/null 2>&1 || { echo "$(RED)✗ flock not found (install util-linux)$(RESET)"; exit 1; }
+	@missing=0; \
+	for dep in curl jq awk grep sort flock find md5sum comm; do \
+		command -v $$dep >/dev/null 2>&1 || { echo "$(RED)✗ $$dep not found$(RESET)"; missing=1; }; \
+	done; \
+	[ $$missing -eq 0 ] || exit 1
 	@echo "$(GREEN)✓ All dependencies found$(RESET)"
 
 ## setup: Create local working directory with config files
@@ -99,20 +101,21 @@ clean:
 	@rm -rf work/tmp/* work/cache/* 2>/dev/null || true
 	@echo "$(GREEN)✓ Cleaned$(RESET)"
 
-## test: Run basic tests
-test: check deps
+# test does not depend on deps: runtime tools (flock etc.) are not needed
+# to run the bats suite, and the script checks them itself at startup
+## test: Run smoke test and bats suite
+test: check
 	@echo "$(CYAN)Running tests...$(RESET)"
 	@bin/$(SCRIPT_NAME) --version
+	@command -v bats >/dev/null 2>&1 || { echo "$(RED)✗ bats not installed (apt-get install bats / brew install bats-core)$(RESET)"; exit 1; }
+	@bats tests/
 	@echo "$(GREEN)✓ All tests passed$(RESET)"
 
-## lint: Run shellcheck linter
+## lint: Run shellcheck linter (same severity as CI)
 lint:
 	@echo "$(CYAN)Running shellcheck...$(RESET)"
-	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck bin/$(SCRIPT_NAME) && echo "$(GREEN)✓ No issues found$(RESET)"; \
-	else \
-		echo "$(YELLOW)⚠ shellcheck not installed, skipping$(RESET)"; \
-	fi
+	@command -v shellcheck >/dev/null 2>&1 || { echo "$(RED)✗ shellcheck not installed$(RESET)"; exit 1; }
+	@shellcheck --severity=warning --shell=bash bin/$(SCRIPT_NAME) && echo "$(GREEN)✓ No issues found$(RESET)"
 
 # Version bumping targets
 ## bump-patch: Bump patch version (x.y.Z)
@@ -125,7 +128,7 @@ bump-patch:
 	new_patch=$$((patch + 1)); \
 	new_version="$$major.$$minor.$$new_patch"; \
 	echo "$$new_version" > VERSION; \
-	echo "$(GREEN)✓ Version bumped: $$current → $$new_version$(RESET)"
+	echo "$(GREEN)✓ Version bumped: $$current -> $$new_version$(RESET)"
 
 ## bump-minor: Bump minor version (x.Y.0)
 bump-minor:
@@ -136,7 +139,7 @@ bump-minor:
 	new_minor=$$((minor + 1)); \
 	new_version="$$major.$$new_minor.0"; \
 	echo "$$new_version" > VERSION; \
-	echo "$(GREEN)✓ Version bumped: $$current → $$new_version$(RESET)"
+	echo "$(GREEN)✓ Version bumped: $$current -> $$new_version$(RESET)"
 
 ## bump-major: Bump major version (X.0.0)
 bump-major:
@@ -146,18 +149,21 @@ bump-major:
 	new_major=$$((major + 1)); \
 	new_version="$$new_major.0.0"; \
 	echo "$$new_version" > VERSION; \
-	echo "$(GREEN)✓ Version bumped: $$current → $$new_version$(RESET)"
+	echo "$(GREEN)✓ Version bumped: $$current -> $$new_version$(RESET)"
 
-## release: Create a new release (tag + push)
-release: check lint
+## release: Create a new release tag (requires clean tree)
+release: check lint test
 	@echo "$(CYAN)Creating release v$(VERSION)...$(RESET)"
-	@if git diff --quiet VERSION 2>/dev/null; then \
-		echo "$(YELLOW)Creating git tag v$(VERSION)...$(RESET)"; \
-		git tag -a "v$(VERSION)" -m "Release v$(VERSION)"; \
-		echo "$(GREEN)✓ Tag v$(VERSION) created$(RESET)"; \
-		echo "$(YELLOW)Push with: git push origin v$(VERSION)$(RESET)"; \
-	else \
-		echo "$(RED)✗ VERSION file has uncommitted changes$(RESET)"; \
-		echo "$(YELLOW)Commit VERSION first, then run make release$(RESET)"; \
+	@if ! git diff --quiet || ! git diff --cached --quiet; then \
+		echo "$(RED)✗ Working tree has uncommitted changes$(RESET)"; \
+		echo "$(YELLOW)Commit everything first, then run make release$(RESET)"; \
 		exit 1; \
 	fi
+	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then \
+		echo "$(RED)✗ Tag v$(VERSION) already exists$(RESET)"; \
+		echo "$(YELLOW)Bump VERSION first (make bump-patch / bump-minor / bump-major)$(RESET)"; \
+		exit 1; \
+	fi
+	@git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
+	@echo "$(GREEN)✓ Tag v$(VERSION) created$(RESET)"
+	@echo "$(YELLOW)Push with: git push origin v$(VERSION)$(RESET)"
