@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-10-08
+
+### Fixed
+
+- Keep the lock inode in `state/`; cleanup and a competing process no longer remove the active lock or erase its PID. Help and version commands leave the log unchanged.
+- Record source checksums and the success timestamp only after validation and publication. Failed runs retry; source removals and empty output files trigger processing.
+- Download each source once per run and reuse that snapshot. Available main and special sources can still update when another URL fails. Configured whitelist download failures stop publication; an empty whitelist is allowed.
+- Strip source comments before tokenization so domain names mentioned in comments cannot enter the output.
+- Treat DNS transport failures, HTTP errors, malformed JSON and SERVFAIL as retryable failures. Cache only confirmed NXDOMAIN as negative, with a separate one-day TTL; recheck legacy `invalid` entries immediately.
+- Preserve domains returning NOERROR without an A answer, including names used as suffixes. Accept punycode TLDs, enforce the 63-character label limit and preserve names with five or more labels.
+- Stage DNS results before publication, validate once and remove tolerated invalid rows. Failed local publication restores previous outputs, including their absence on a first run.
+- Validate settings from the shell and `.env` consistently, handle CRLF and matching quotes, and keep inherited GitHub tokens out of child environments. Bound GitHub requests by connection and total timeouts and reject HTTP errors.
+- Stop background workers and their descendants before releasing the lock. Apply directory ownership consistently when run through sudo.
+- Preserve whitelist policy on extraction errors and retain the previous PSL on failed downloads or malformed responses. Cache eviction handles paths containing spaces without deleting unrelated files.
+- Roll back interrupted local publication before unlocking, including a signal between the two output renames.
+- RouterOS: fetch and validate the complete list before changing entries, add missing entries before removing stale ones, handle CRLF, and reject oversized or malformed lists. Prevent overlapping jobs of the same named script.
+- `make install` embeds the release version and configuration directory. `make setup` preserves edited source files; `make -C ... run` uses the target directory.
+
+### Changed
+
+- Classify domains and apply whitelist suffixes with awk lookups instead of per-domain grep processes. Use a bounded DNS worker pool that takes the next domain as a worker becomes free.
+- CI runs `make check`, `make deps`, `make lint` and `make test` for main, pull requests and release tags. Missing dependencies fail the job.
+- Fix ineffective negative Bats assertions and add regressions for locking, source snapshots, DNS cache, publication, installation and the full CLI pipeline.
+
+### Documentation
+
+- Document DNS cache migration, staged publication limits and installed working-directory behavior. Correct the RouterOS 6 compatibility claim; the updater requires RouterOS 7.20.6 or later.
+- The RouterOS updater was reviewed against the scripting documentation but was not executed on a router. Test it on the target version before scheduling it.
+
 ## [2.2.0] - 2026-07-13
 
 ### Fixed
@@ -152,6 +181,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[2.2.1]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.0.0...v2.1.0
