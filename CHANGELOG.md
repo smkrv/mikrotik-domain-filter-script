@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Tolerate transient DNS failures below a configurable percentage while keeping them uncached; preserve existing output when failures exceed the threshold.
-- Allow Gist exports to update either configured list independently and skip lists without an ID.
+- Allow Gist exports to update either configured list independently and skip lists without an ID. Reject malformed configured IDs before sending any update.
+- Retry tolerated transient DNS failures even when source checksums are unchanged; return to the no-op path after recovery.
 - Use a temporary test root in install tests so they run with Bats 1.2.1.
 
 ### Changed

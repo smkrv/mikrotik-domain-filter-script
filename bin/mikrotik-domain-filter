@@ -71,6 +71,7 @@ readonly OUTPUT_FILE="${WORK_DIR}/filtered_domains_mikrotik.txt"
 readonly OUTPUT_FILESPECIAL="${WORK_DIR}/filtered_domains_special_mikrotik.txt"
 
 # Read data assignments without evaluating shell syntax.
+GIST_CONFIG_INVALID=false
 declare -A ALLOWED_ENV_KEYS=(
     [EXPORT_GISTS]=1 [GITHUB_TOKEN]=1 [GIST_ID_MAIN]=1 [GIST_ID_SPECIAL]=1
     [MAX_PARALLEL_JOBS]=1 [DNS_TIMEOUT]=1 [DNS_MAX_RETRIES]=1 [DNS_MAX_FAILURE_PERCENT]=1
@@ -98,11 +99,13 @@ if [[ -f "${WORK_DIR}/.env" ]]; then
             quote="${value:0:1}"
             if [[ ${#value} -lt 2 || "${value: -1}" != "$quote" ]]; then
                 echo "WARNING: Ignoring unmatched quotes for $key" >&2
+                [[ "$key" != GIST_ID_MAIN && "$key" != GIST_ID_SPECIAL ]] || GIST_CONFIG_INVALID=true
                 continue
             fi
             value="${value:1:${#value}-2}"
         elif [[ "$value" == *\" || "$value" == *\' ]]; then
             echo "WARNING: Ignoring unmatched quotes for $key" >&2
+            [[ "$key" != GIST_ID_MAIN && "$key" != GIST_ID_SPECIAL ]] || GIST_CONFIG_INVALID=true
             continue
         fi
         printf -v "$key" '%s' "$value"
@@ -130,6 +133,7 @@ fi
 for _env_var in GIST_ID_MAIN GIST_ID_SPECIAL; do
     if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[a-fA-F0-9]{20,32}$ ]]; then
         echo "WARNING: Invalid format for $_env_var, ignoring" >&2
+        GIST_CONFIG_INVALID=true
         unset "$_env_var"
     fi
 done
@@ -148,6 +152,8 @@ readonly GIST_ID_SPECIAL=${GIST_ID_SPECIAL:-""} # Gist ID for special list
 
 # Add state preservation
 readonly STATE_DIR="${WORK_DIR}/state"
+readonly DNS_RETRY_FILE="${STATE_DIR}/dns_retry.pending"
+DNS_RETRY_REQUIRED=false
 
 
 # Performance settings (configurable via environment variables)
@@ -639,6 +645,12 @@ check_domains_parallel() {
             log "ERROR: DNS checks inconclusive: $transient of $total domains failed transiently (limit ${DNS_MAX_FAILURE_PERCENT}%)"
             failure=2
         elif (( transient > 0 )); then
+            DNS_RETRY_REQUIRED=true
+            # Persist before publication so unchanged inputs cannot skip retries.
+            if ! : > "$DNS_RETRY_FILE"; then
+                log "ERROR: Cannot record pending DNS retry"
+                failure=3
+            fi
             log "WARNING: Skipping $transient transient DNS failures; they were not cached and will be rechecked next run"
             while IFS= read -r domain; do
                 log "WARNING: DNS check skipped (not cached): $domain"
@@ -1193,6 +1205,10 @@ save_results() {
 # Publish the staged lists before exposing local outputs or committing state.
 update_gists() {
     [[ "$EXPORT_GISTS" == true ]] || return 0
+    if [[ "$GIST_CONFIG_INVALID" == true ]]; then
+        log "ERROR: Invalid configured Gist ID; no Gists were updated"
+        return 1
+    fi
     [[ -n "$GITHUB_TOKEN" && ( -n "$GIST_ID_MAIN" || -n "$GIST_ID_SPECIAL" ) ]] || {
         log "ERROR: Gist export requires a token and at least one Gist ID"
         return 1
@@ -1256,6 +1272,7 @@ check_updates_needed() {
         fi
     done
     LC_ALL=C sort -u "$current" -o "$current" || return 2
+    [[ ! -e "$DNS_RETRY_FILE" ]] || return 0
     [[ -s "$STATE_DIR/update_state.dat" && -s "$OUTPUT_FILE" && -s "$OUTPUT_FILESPECIAL" ]] || return 0
     [[ -f "$previous" ]] && cmp -s "$current" "$previous" || return 0
     last_update=$(<"$STATE_DIR/update_state.dat")
@@ -1285,6 +1302,9 @@ commit_update_state() {
             rm -f "${STATE_DIR}/update_state.dat"
         fi
         return 1
+    fi
+    if [[ "$DNS_RETRY_REQUIRED" != true ]]; then
+        rm -f "$DNS_RETRY_FILE" || return 1
     fi
     rm -f "$backup"
 }
@@ -1332,6 +1352,7 @@ main() {
     mkdir -p "$STATE_DIR" "$TMP_DIR" || return 1
     chmod 700 "$STATE_DIR" "$TMP_DIR" || return 1
     acquire_lock || return 1
+    DNS_RETRY_REQUIRED=false
     log "Script started..."
     if ! check_required_files || ! init_directories || ! check_dependencies || \
        ! cleanup || ! load_public_suffix_list; then

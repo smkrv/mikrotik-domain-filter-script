@@ -106,8 +106,8 @@ Typical uses on the RouterOS side:
 
 - **Domain Validation**: Each remaining domain is queried via Cloudflare DoH. `NOERROR` keeps the domain, including names without an A record that are used as suffixes. `NXDOMAIN` excludes it. Transient transport failures, HTTP errors and other DNS errors are never cached as invalid; an excessive share makes the update inconclusive.
 - **Parallel Processing**: DNS checks use up to 5 workers by default, capped at 64; a free worker takes the next domain. Positive results are cached for 90 days; `NXDOMAIN` results expire after 1 day. Configure these separately with `CACHE_TTL_DAYS` and `CACHE_INVALID_TTL_DAYS`.
-- **Transient Failures**: Transient DNS failures are not cached. If they affect no more than `DNS_MAX_FAILURE_PERCENT` (default: 5%) of the domains, those domains are skipped and retried on the next run. A larger share makes the DNS check inconclusive, aborts the update, and preserves the existing output.
-- **DNS Resolution Method**: Verification uses Cloudflare's DNS-over-HTTPS (DoH) service(https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/): queries travel over an encrypted channel and return JSON that the script parses with `jq`.
+- **Transient Failures**: Transient DNS failures are not cached. If they affect no more than `DNS_MAX_FAILURE_PERCENT` (default: 5%) of the domains, those domains are skipped and retried on the next run, even if the source checksums are unchanged. A pending retry marker is cleared only after both lists finish without transient failures and publication succeeds. The percentage is evaluated separately for each list. A larger share makes the DNS check inconclusive, aborts the update, and preserves the existing output.
+- **DNS Resolution Method**: Verification uses Cloudflare's DNS-over-HTTPS (DoH) [service](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/): queries travel over an encrypted channel and return JSON that the script parses with `jq`.
 
 **Endpoint**: `https://cloudflare-dns.com/dns-query`  
 
@@ -363,7 +363,7 @@ Gist updates go directly through the GitHub API (`curl` + `jq`, both already req
 - The `.env` file must have restricted permissions (`chmod 600`) - the script warns if permissions are too open
 - Environment variables can also be set directly in the shell; `WORK_DIR` is honored only from the shell environment, not from `.env`
 - Set `EXPORT_GISTS=false` to disable Gist updates
-- When exports are enabled, set `GITHUB_TOKEN` and at least one of `GIST_ID_MAIN` or `GIST_ID_SPECIAL`; the IDs are optional individually and must be 20-32 hexadecimal characters
+- When exports are enabled, set `GITHUB_TOKEN` and at least one of `GIST_ID_MAIN` or `GIST_ID_SPECIAL`; the IDs are optional individually and must be 20-32 hexadecimal characters. A malformed configured ID stops the export before either Gist is updated
 - `DNS_MAX_FAILURE_PERCENT` sets the tolerated transient DNS failure percentage (default: 5; valid range: 1-100)
 - `MAX_PARALLEL_JOBS` sets the worker count (default: 5; values above 64 are clamped to 64)
 - Numeric values are validated (positive integers, no leading zeros)

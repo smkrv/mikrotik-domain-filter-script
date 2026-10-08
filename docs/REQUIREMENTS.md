@@ -16,6 +16,7 @@
 - comm (GNU coreutils) - for list intersection checks
 - flock (util-linux) - for file locking
 - find (GNU findutils) - for file operations
+- ps (procps) - for terminating worker descendants
 
 ## Optional Dependencies
 - logrotate - for log management
@@ -40,8 +41,11 @@ Configure these variables in the shell or in `WORK_DIR/.env`. Numeric values mus
 | `GITHUB_TOKEN` | - | GitHub Personal Access Token |
 | `GIST_ID_MAIN` | - | Gist ID for main domain list |
 | `GIST_ID_SPECIAL` | - | Gist ID for special domain list |
-| `MAX_PARALLEL_JOBS` | `5` | Number of parallel DNS checks |
+| `MAX_PARALLEL_JOBS` | `5` | Number of parallel DNS checks, capped at 64 |
 | `DNS_TIMEOUT` | `10` | DNS query timeout in seconds |
 | `DNS_MAX_RETRIES` | `3` | Maximum DNS query retries |
+| `DNS_MAX_FAILURE_PERCENT` | `5` | Allowed transient DNS failures per list, 1-100 percent |
 | `CACHE_TTL_DAYS` | `90` | Positive DNS cache TTL in days |
 | `CACHE_INVALID_TTL_DAYS` | `1` | NXDOMAIN cache TTL in days |
+
+Gist exports require a token and at least one valid Gist ID. Each ID is optional individually; a malformed configured ID stops all Gist requests.
