@@ -11,6 +11,14 @@ setup() { load test_helpers; load_script_functions; }
     [ "$status" -eq 0 ]
     [[ "$output" == *"5 10 90" ]]
 }
+@test "MAX_PARALLEL_JOBS is capped at 64" {
+    run env WORK_DIR="$WORK_DIR" MAX_PARALLEL_JOBS=1000 bash -c \
+        'source "$1"; printf "value=%s\n" "$MAX_PARALLEL_JOBS"' _ \
+        "${BATS_TEST_DIRNAME}/../bin/mikrotik-domain-filter"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARNING: MAX_PARALLEL_JOBS exceeds 64, clamping to 64"* ]]
+    [[ "$output" == *"value=64"* ]]
+}
 @test "CRLF quoted env values are trimmed and secrets are not exported" {
     printf 'EXPORT_GISTS = "true"\r\nGITHUB_TOKEN = "test-token"\r\nDNS_TIMEOUT = 12\r\n' > "$WORK_DIR/.env"
     run env WORK_DIR="$WORK_DIR" GITHUB_TOKEN=inherited bash -c 'source "$1"; printf "%s %s %s\n" "$EXPORT_GISTS" "$DNS_TIMEOUT" "$GITHUB_TOKEN"; env | grep "^GITHUB_TOKEN=" && exit 9; exit 0' _ "${BATS_TEST_DIRNAME}/../bin/mikrotik-domain-filter"
@@ -31,6 +39,13 @@ setup() { load test_helpers; load_script_functions; }
     [ "$status" -ne 0 ]
     release_lock
     [ "$(stat -c %i "$LOCK_FILE")" = "$inode" ]
+}
+@test "oversized log rotates on lock acquisition" {
+    truncate -s 11M "$LOG_FILE"
+    acquire_lock
+    [ -f "${LOG_FILE}.1" ]
+    [ "$(stat -c %s "$LOG_FILE")" -lt 1024 ]
+    release_lock
 }
 @test "Github failures are status checked and bounded" {
     curl() {

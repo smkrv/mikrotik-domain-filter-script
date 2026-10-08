@@ -35,7 +35,7 @@ if [[ -n "$INSTALL_VERSION" ]]; then
 elif [[ -f "${REPO_DIR}/VERSION" ]]; then
     VERSION="$(tr -d '[:space:]' < "${REPO_DIR}/VERSION")"
 else
-    VERSION="2.2.1"  # Fallback version
+    VERSION="2.2.2"  # Fallback version
 fi
 readonly VERSION
 
@@ -57,6 +57,7 @@ readonly SOURCESSPECIAL_FILE="${WORK_DIR}/sources_special.txt"
 readonly WHITELIST_FILE="${WORK_DIR}/sources_whitelist.txt"
 readonly PUBLIC_SUFFIX_FILE="${WORK_DIR}/public_suffix_list.dat"
 readonly LOG_FILE="${WORK_DIR}/script.log"
+readonly LOG_MAX_BYTES=10485760
 
 # Keep the lock inode outside temporary cleanup.
 readonly LOCK_FILE="${WORK_DIR}/state/domains_update.lock"
@@ -70,9 +71,10 @@ readonly OUTPUT_FILE="${WORK_DIR}/filtered_domains_mikrotik.txt"
 readonly OUTPUT_FILESPECIAL="${WORK_DIR}/filtered_domains_special_mikrotik.txt"
 
 # Read data assignments without evaluating shell syntax.
+GIST_CONFIG_INVALID=false
 declare -A ALLOWED_ENV_KEYS=(
     [EXPORT_GISTS]=1 [GITHUB_TOKEN]=1 [GIST_ID_MAIN]=1 [GIST_ID_SPECIAL]=1
-    [MAX_PARALLEL_JOBS]=1 [DNS_TIMEOUT]=1 [DNS_MAX_RETRIES]=1
+    [MAX_PARALLEL_JOBS]=1 [DNS_TIMEOUT]=1 [DNS_MAX_RETRIES]=1 [DNS_MAX_FAILURE_PERCENT]=1
     [CACHE_TTL_DAYS]=1 [CACHE_INVALID_TTL_DAYS]=1
 )
 if [[ -f "${WORK_DIR}/.env" ]]; then
@@ -97,11 +99,13 @@ if [[ -f "${WORK_DIR}/.env" ]]; then
             quote="${value:0:1}"
             if [[ ${#value} -lt 2 || "${value: -1}" != "$quote" ]]; then
                 echo "WARNING: Ignoring unmatched quotes for $key" >&2
+                [[ "$key" != GIST_ID_MAIN && "$key" != GIST_ID_SPECIAL ]] || GIST_CONFIG_INVALID=true
                 continue
             fi
             value="${value:1:${#value}-2}"
         elif [[ "$value" == *\" || "$value" == *\' ]]; then
             echo "WARNING: Ignoring unmatched quotes for $key" >&2
+            [[ "$key" != GIST_ID_MAIN && "$key" != GIST_ID_SPECIAL ]] || GIST_CONFIG_INVALID=true
             continue
         fi
         printf -v "$key" '%s' "$value"
@@ -112,15 +116,24 @@ if [[ -f "${WORK_DIR}/.env" ]]; then
     fi
 fi
 # Validate both .env and shell settings before arithmetic or network calls.
-for _env_var in DNS_TIMEOUT DNS_MAX_RETRIES MAX_PARALLEL_JOBS CACHE_TTL_DAYS CACHE_INVALID_TTL_DAYS; do
+for _env_var in DNS_TIMEOUT DNS_MAX_RETRIES DNS_MAX_FAILURE_PERCENT MAX_PARALLEL_JOBS CACHE_TTL_DAYS CACHE_INVALID_TTL_DAYS; do
     if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[1-9][0-9]{0,6}$ ]]; then
         echo "WARNING: Invalid numeric value for $_env_var, using default" >&2
         unset "$_env_var"
     fi
 done
+if [[ -n "${DNS_MAX_FAILURE_PERCENT:-}" ]] && (( DNS_MAX_FAILURE_PERCENT > 100 )); then
+    echo "WARNING: Invalid numeric value for DNS_MAX_FAILURE_PERCENT, using default" >&2
+    unset DNS_MAX_FAILURE_PERCENT
+fi
+if [[ -n "${MAX_PARALLEL_JOBS:-}" ]] && (( MAX_PARALLEL_JOBS > 64 )); then
+    echo "WARNING: MAX_PARALLEL_JOBS exceeds 64, clamping to 64" >&2
+    MAX_PARALLEL_JOBS=64
+fi
 for _env_var in GIST_ID_MAIN GIST_ID_SPECIAL; do
     if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[a-fA-F0-9]{20,32}$ ]]; then
-        echo "WARNING: Invalid format for $_env_var, ignoring" >&2
+        echo "WARNING: Invalid format for $_env_var; Gist export will fail if enabled" >&2
+        GIST_CONFIG_INVALID=true
         unset "$_env_var"
     fi
 done
@@ -139,10 +152,13 @@ readonly GIST_ID_SPECIAL=${GIST_ID_SPECIAL:-""} # Gist ID for special list
 
 # Add state preservation
 readonly STATE_DIR="${WORK_DIR}/state"
+readonly DNS_RETRY_FILE="${STATE_DIR}/dns_retry.pending"
+DNS_RETRY_REQUIRED=false
 
 
 # Performance settings (configurable via environment variables)
 readonly MAX_PARALLEL_JOBS=${MAX_PARALLEL_JOBS:-5}
+readonly DNS_MAX_FAILURE_PERCENT=${DNS_MAX_FAILURE_PERCENT:-5}
 
 readonly DNS_TIMEOUT=${DNS_TIMEOUT:-10}
 readonly DNS_MAX_RETRIES=${DNS_MAX_RETRIES:-3}
@@ -207,6 +223,7 @@ ENVIRONMENT VARIABLES:
     MAX_PARALLEL_JOBS       Parallel DNS checks (default: 5)
     DNS_TIMEOUT             DNS query timeout in seconds (default: 10)
     DNS_MAX_RETRIES         DNS query retries (default: 3)
+    DNS_MAX_FAILURE_PERCENT Maximum transient DNS failure percentage (default: 5)
     CACHE_TTL_DAYS          DNS cache TTL in days (default: 90)
 
 For detailed documentation, visit:
@@ -276,11 +293,20 @@ error() {
 # Lock lifetime includes all background workers.
 LOCK_HELD=false
 acquire_lock() {
+    local log_size=0
     exec 9>>"$LOCK_FILE" || return 1
     if ! flock -n 9; then
         echo "Script is already running (PID: $(cat "$LOCK_FILE" 2>/dev/null))" >&2
         exec 9>&-
         return 1
+    fi
+    if [[ -f "$LOG_FILE" ]]; then
+        log_size=$(stat -c %s "$LOG_FILE" 2>/dev/null) || log_size=0
+        if (( log_size > LOG_MAX_BYTES )) && ! mv -f -- "$LOG_FILE" "${LOG_FILE}.1"; then
+            flock -u 9
+            exec 9>&-
+            return 1
+        fi
     fi
     LOCK_HELD=true
     printf '%s\n' "$$" > "$LOCK_FILE"
@@ -510,7 +536,7 @@ github_api_request() {
 
 # Function to check dependencies
 check_dependencies() {
-    local deps=(curl jq awk grep sort flock find md5sum comm)
+    local deps=(curl jq awk grep sort flock find md5sum comm ps)
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             error "Required dependency: $dep"
@@ -559,7 +585,7 @@ check_domain() {
 check_domains_parallel() {
     local input=$1 output=$2
     [[ -r "$input" && -w "$(dirname "$output")" ]] || return 3
-    local total results_dir worker_count worker pid rc failure=0
+    local total results_dir worker_count worker pid rc failure=0 transient domain
     total=$(wc -l < "$input")
     (( total > 0 )) || return 1
     results_dir=$(mktemp -d "${TMP_DIR}/dns_results_XXXXXX") || return 3
@@ -574,6 +600,7 @@ check_domains_parallel() {
             exec 8> "${results_dir}/queue.lock" || exit 3
             local domain result processed=0 worker_failure=0
             : > "${results_dir}/${worker}.valid" || exit 3
+            : > "${results_dir}/${worker}.transient" || exit 3
             while true; do
                 flock -x 8 || exit 3
                 if ! IFS= read -r domain <&7; then
@@ -586,7 +613,7 @@ check_domains_parallel() {
                 else
                     result=$?
                     if (( result == 2 )); then
-                        (( worker_failure < 2 )) && worker_failure=2
+                        printf '%s\n' "$domain" >> "${results_dir}/${worker}.transient" || exit 3
                     elif (( result != 1 )); then
                         worker_failure=3
                     fi
@@ -607,11 +634,29 @@ check_domains_parallel() {
         else
             rc=$?
         fi
-        if (( rc == 2 && failure < 2 )); then failure=2
-        elif (( rc != 0 && rc != 2 )); then failure=3
+        if (( rc != 0 )); then
+            failure=3
         fi
     done
     DNS_WORKER_PIDS=()
+    if (( failure == 0 )); then
+        transient=$(awk 'END { print NR + 0 }' "${results_dir}/"*.transient)
+        if (( transient * 100 > total * DNS_MAX_FAILURE_PERCENT )); then
+            log "ERROR: DNS checks inconclusive: $transient of $total domains failed transiently (limit ${DNS_MAX_FAILURE_PERCENT}%)"
+            failure=2
+        elif (( transient > 0 )); then
+            DNS_RETRY_REQUIRED=true
+            # Persist before publication so unchanged inputs cannot skip retries.
+            if ! : > "$DNS_RETRY_FILE"; then
+                log "ERROR: Cannot record pending DNS retry"
+                failure=3
+            fi
+            log "WARNING: Skipping $transient transient DNS failures; they were not cached and will be rechecked next run"
+            while IFS= read -r domain; do
+                log "WARNING: DNS check skipped (not cached): $domain"
+            done < <(awk 'NR <= 10' "${results_dir}/"*.transient)
+        fi
+    fi
     if (( failure == 0 )); then
         if ! sort -u "${results_dir}/"*.valid > "${results_dir}/output"; then
             failure=3
@@ -621,7 +666,7 @@ check_domains_parallel() {
             failure=3
         fi
     fi
-    rm -f "${results_dir}/"*.valid "${results_dir}/queue.lock" "${results_dir}/output"
+    rm -f "${results_dir}/"*.valid "${results_dir}/"*.transient "${results_dir}/queue.lock" "${results_dir}/output"
     rmdir "$results_dir"
     if (( failure == 0 )); then
         log "DNS checks complete: $total processed, $(wc -l < "$output") valid"
@@ -1160,8 +1205,12 @@ save_results() {
 # Publish the staged lists before exposing local outputs or committing state.
 update_gists() {
     [[ "$EXPORT_GISTS" == true ]] || return 0
-    [[ -n "$GITHUB_TOKEN" && -n "$GIST_ID_MAIN" && -n "$GIST_ID_SPECIAL" ]] || {
-        log "ERROR: Gist export requires a token and both gist IDs"
+    if [[ "$GIST_CONFIG_INVALID" == true ]]; then
+        log "ERROR: Invalid configured Gist ID; no Gists were updated"
+        return 1
+    fi
+    [[ -n "$GITHUB_TOKEN" && ( -n "$GIST_ID_MAIN" || -n "$GIST_ID_SPECIAL" ) ]] || {
+        log "ERROR: Gist export requires a token and at least one Gist ID"
         return 1
     }
     local main_list=${1:-$OUTPUT_FILE} special_list=${2:-$OUTPUT_FILESPECIAL}
@@ -1169,6 +1218,10 @@ update_gists() {
     for file in "$main_list" "$special_list"; do
         if [[ "$file" == "$main_list" ]]; then id=$GIST_ID_MAIN; filename=$(basename "$OUTPUT_FILE")
         else id=$GIST_ID_SPECIAL; filename=$(basename "$OUTPUT_FILESPECIAL"); fi
+        if [[ -z "$id" ]]; then
+            log "Skipping Gist update for $filename: no Gist ID configured"
+            continue
+        fi
         payload=$(mktemp "${TMP_DIR}/payload.XXXXXX") || return 1
         if ! jq -n --arg filename "$filename" --rawfile content "$file" \
             '{files: {($filename): {content: $content}}}' > "$payload"; then
@@ -1219,6 +1272,7 @@ check_updates_needed() {
         fi
     done
     LC_ALL=C sort -u "$current" -o "$current" || return 2
+    [[ ! -e "$DNS_RETRY_FILE" ]] || return 0
     [[ -s "$STATE_DIR/update_state.dat" && -s "$OUTPUT_FILE" && -s "$OUTPUT_FILESPECIAL" ]] || return 0
     [[ -f "$previous" ]] && cmp -s "$current" "$previous" || return 0
     last_update=$(<"$STATE_DIR/update_state.dat")
@@ -1248,6 +1302,9 @@ commit_update_state() {
             rm -f "${STATE_DIR}/update_state.dat"
         fi
         return 1
+    fi
+    if [[ "$DNS_RETRY_REQUIRED" != true ]]; then
+        rm -f "$DNS_RETRY_FILE" || return 1
     fi
     rm -f "$backup"
 }
@@ -1295,6 +1352,7 @@ main() {
     mkdir -p "$STATE_DIR" "$TMP_DIR" || return 1
     chmod 700 "$STATE_DIR" "$TMP_DIR" || return 1
     acquire_lock || return 1
+    DNS_RETRY_REQUIRED=false
     log "Script started..."
     if ! check_required_files || ! init_directories || ! check_dependencies || \
        ! cleanup || ! load_public_suffix_list; then

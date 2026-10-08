@@ -2,13 +2,18 @@
 
 setup() {
     REPO_ROOT=$(cd "$BATS_TEST_DIRNAME/.." && pwd)
-    PACKAGE_ROOT="$BATS_TEST_TMPDIR/package"
+    TEST_ROOT=$(mktemp -d)
+    PACKAGE_ROOT="$TEST_ROOT/package"
     mkdir -p "$PACKAGE_ROOT/bin" "$PACKAGE_ROOT/config"
     cp "$REPO_ROOT/Makefile" "$REPO_ROOT/VERSION" "$PACKAGE_ROOT/"
     cp "$REPO_ROOT/bin/mikrotik-domain-filter" "$PACKAGE_ROOT/bin/"
     cp "$REPO_ROOT"/config/*.example "$PACKAGE_ROOT/config/"
-    INSTALL_PREFIX="$BATS_TEST_TMPDIR/prefix"
-    CONFIG_DIR="$BATS_TEST_TMPDIR/config space"
+    INSTALL_PREFIX="$TEST_ROOT/prefix"
+    CONFIG_DIR="$TEST_ROOT/config space"
+}
+
+teardown() {
+    rm -rf "$TEST_ROOT"
 }
 
 # Contract: installation reports the release version independently of caller cwd.
@@ -29,9 +34,9 @@ setup() {
     run env -u WORK_DIR bash -c 'source "$1"; printf "%s\n" "$WORK_DIR"' _ "$INSTALL_PREFIX/bin/mikrotik-domain-filter"
     [ "$status" -eq 0 ]
     [ "$output" = "$CONFIG_DIR" ]
-    run env WORK_DIR="$BATS_TEST_TMPDIR/override" bash -c 'source "$1"; printf "%s\n" "$WORK_DIR"' _ "$INSTALL_PREFIX/bin/mikrotik-domain-filter"
+    run env WORK_DIR="$TEST_ROOT/override" bash -c 'source "$1"; printf "%s\n" "$WORK_DIR"' _ "$INSTALL_PREFIX/bin/mikrotik-domain-filter"
     [ "$status" -eq 0 ]
-    [ "$output" = "$BATS_TEST_TMPDIR/override" ]
+    [ "$output" = "$TEST_ROOT/override" ]
 }
 
 @test "setup preserves edited configuration" {

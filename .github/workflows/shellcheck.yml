@@ -21,7 +21,7 @@ jobs:
       - name: Install check dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bats shellcheck curl jq util-linux coreutils gawk
+          sudo apt-get install -y bats shellcheck curl jq util-linux coreutils gawk procps
 
       - name: Run repository checks
         run: |

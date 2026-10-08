@@ -23,7 +23,7 @@ Typical uses on the RouterOS side:
 
 >  **Prerequisites**
 > - Linux system (Debian 10+, Ubuntu 20.04+)
-> - Install dependencies: `sudo apt-get install curl jq gawk grep util-linux`
+> - Install dependencies: `sudo apt-get install curl jq gawk grep util-linux procps`
 >
 > **Quick Start with Make**
 > ```bash
@@ -81,10 +81,10 @@ Typical uses on the RouterOS side:
 ### Initialization and Setup
 
 - **Path Settings**: The script defines paths for working directories, source files, output files, and temporary files.
-- **Logging**: Events append to `script.log` after locking. `--help`, `--version` and a competing process leave the active log unchanged. Use logrotate to bound log growth.
+- **Logging**: Events append to `script.log` after locking. `--help`, `--version` and a competing process leave the active log unchanged. When the log exceeds 10 MiB, the next run rotates it to `script.log.1`, replacing the previous backup. External log rotation can also be used.
 - **Lock Mechanism**: A file lock (`flock`) ensures that only one instance of the script runs at a time.
 - **Directory Initialization**: Required directories are checked and created if they don't exist.
-- **Dependency Check**: The script verifies the presence of required system tools: `curl`, `jq`, `awk`, `grep`, `sort`, `flock`, `find`, `md5sum`, and `comm`.
+- **Dependency Check**: The script verifies the presence of required system tools: `curl`, `jq`, `awk`, `grep`, `sort`, `flock`, `find`, `md5sum`, `comm`, and `ps` (provided by `procps`).
 
 ### File Checks and Cleanup
 
@@ -104,9 +104,10 @@ Typical uses on the RouterOS side:
 
 ### DNS Checks  
 
-- **Domain Validation**: Each remaining domain is queried via Cloudflare DoH. `NOERROR` keeps the domain, including names without an A record that are used as suffixes. `NXDOMAIN` excludes it. Transport failures, HTTP errors and other DNS errors abort the update without caching an invalid verdict.
-- **Parallel Processing**: DNS checks use up to 5 workers by default. A free worker takes the next domain. Positive results are cached for 90 days; `NXDOMAIN` results expire after 1 day. Configure these separately with `CACHE_TTL_DAYS` and `CACHE_INVALID_TTL_DAYS`.
-- **DNS Resolution Method**: Verification uses Cloudflare's DNS-over-HTTPS (DoH) service(https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/): queries travel over an encrypted channel and return JSON that the script parses with `jq`.
+- **Domain Validation**: Each remaining domain is queried via Cloudflare DoH. `NOERROR` keeps the domain, including names without an A record that are used as suffixes. `NXDOMAIN` excludes it. Transient transport failures, HTTP errors and other DNS errors are never cached as invalid; an excessive share makes the update inconclusive.
+- **Parallel Processing**: DNS checks use up to 5 workers by default, capped at 64; a free worker takes the next domain. Positive results are cached for 90 days; `NXDOMAIN` results expire after 1 day. Configure these separately with `CACHE_TTL_DAYS` and `CACHE_INVALID_TTL_DAYS`.
+- **Transient Failures**: Transient DNS failures are not cached. If they affect no more than `DNS_MAX_FAILURE_PERCENT` (default: 5%) of the domains, those domains are skipped and retried on the next run, even if the source checksums are unchanged. A pending retry marker is cleared only after both lists finish without transient failures and publication succeeds. A persistent SERVFAIL keeps the marker set: each scheduled run processes both lists and attempts publication again, including Gist PATCH requests when enabled. Cached DNS results are reused. The percentage is evaluated separately for each list. A larger share makes the DNS check inconclusive, aborts the update, and preserves the existing output.
+- **DNS Resolution Method**: Verification uses Cloudflare's DNS-over-HTTPS (DoH) [service](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/): queries travel over an encrypted channel and return JSON that the script parses with `jq`.
 
 **Endpoint**: `https://cloudflare-dns.com/dns-query`  
 
@@ -121,7 +122,7 @@ For detailed information about the API requests and response format, please refe
 ### Update Checks and Backups
 
 - **Update Needed Check**: The script downloads each source once per run and compares the complete checksum manifest, including source removals. Failed sources are reported; remaining sources can still be processed. Successful checksums and the timestamp are saved after output publication and any configured Gist updates.
-- **Retry and Recovery**: Failed processing leaves the previous success state unchanged, so the next run retries. A configured whitelist that cannot be downloaded stops publication; an absent or empty whitelist configuration, or a downloaded comment-only list, is allowed. Empty HTTP responses are treated as failed sources. Two separate Gists cannot be updated as a single transaction: if the second update fails, the next run retries both.
+- **Retry and Recovery**: Failed processing leaves the previous success state unchanged, so the next run retries. A configured whitelist that cannot be downloaded stops publication; an absent or empty whitelist configuration, or a downloaded comment-only list, is allowed. Empty HTTP responses are treated as failed sources. Gist updates are not transactional: if any configured Gist update fails, local outputs and update state remain unchanged, and the next run retries every configured Gist.
 
 ### Pipeline Summary
 
@@ -318,7 +319,7 @@ workplace.co.jp
 
 #### 5. DNS Validation
 
-Each remaining domain is queried via DNS-over-HTTPS. `NOERROR` keeps it even without an A answer; `NXDOMAIN` removes it. A transient DNS or HTTP failure stops publication and leaves the previous lists available. DNS runs after filtering so excluded domains do not generate queries.
+Each remaining domain is queried via DNS-over-HTTPS. `NOERROR` keeps it even without an A answer; `NXDOMAIN` removes it. Transient DNS or HTTP failures are skipped and remain uncached when within `DNS_MAX_FAILURE_PERCENT`; exceeding the threshold stops publication and leaves the previous lists available. DNS runs after filtering so excluded domains do not generate queries.
 
 #### Example Final Output
 
@@ -351,6 +352,7 @@ EXPORT_GISTS=true
 GITHUB_TOKEN="your_github_token"
 
 # Gist IDs for main and special lists
+# Configure either ID or both; each list without an ID is skipped.
 GIST_ID_MAIN="your_main_gist_id"
 GIST_ID_SPECIAL="your_special_gist_id"
 ```
@@ -361,7 +363,10 @@ Gist updates go directly through the GitHub API (`curl` + `jq`, both already req
 - The `.env` file must have restricted permissions (`chmod 600`) - the script warns if permissions are too open
 - Environment variables can also be set directly in the shell; `WORK_DIR` is honored only from the shell environment, not from `.env`
 - Set `EXPORT_GISTS=false` to disable Gist updates
-- Numeric values are validated (positive integers, no leading zeros); GIST_ID is validated as hex (20-32 chars)
+- When exports are enabled, set `GITHUB_TOKEN` and at least one of `GIST_ID_MAIN` or `GIST_ID_SPECIAL`; the IDs are optional individually and must be 20-32 hexadecimal characters. A malformed configured ID stops the export before either Gist is updated
+- `DNS_MAX_FAILURE_PERCENT` sets the tolerated transient DNS failure percentage (default: 5; valid range: 1-100)
+- `MAX_PARALLEL_JOBS` sets the worker count (default: 5; values above 64 are clamped to 64)
+- Numeric values are validated (positive integers, no leading zeros)
 
 ---
 
@@ -392,7 +397,7 @@ Before running the script, ensure your system meets the requirements in [docs/RE
 **Quick Dependencies Installation (Ubuntu/Debian):**
 ```bash
 sudo apt-get update
-sudo apt-get install curl jq gawk grep util-linux
+sudo apt-get install curl jq gawk grep util-linux procps
 ```
 
 #### Installation Options

@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [2.2.2] - 2026-10-08
+
+### Fixed
+
+- Tolerate transient DNS failures below a configurable percentage while keeping them uncached; preserve existing output when failures exceed the threshold.
+- Allow Gist exports to update either configured list independently and skip lists without an ID. Reject malformed configured IDs before sending any update.
+- Retry tolerated transient DNS failures even when source checksums are unchanged; return to the no-op path after recovery.
+- Use a temporary test root in install tests so they run with Bats 1.2.1.
+
+### Changed
+
+- Cap DNS workers at 64, rotate oversized `script.log` to `script.log.1`, and check for the `ps` dependency.
+- Document transient DNS handling, repeated processing for persistent SERVFAIL, optional Gist IDs, worker limits, and log rotation.
+- Clarify that a malformed configured Gist ID causes enabled exports to fail.
+
 ## [2.2.1] - 2026-10-08
 
 ### Fixed
@@ -181,6 +198,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[Unreleased]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.2.2...HEAD
+[2.2.2]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/smkrv/mikrotik-domain-filter-script/compare/v2.1.0...v2.1.1
