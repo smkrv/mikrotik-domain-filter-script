@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 # @license: MIT License
 # @author: SMKRV
@@ -26,17 +25,25 @@ readonly SCRIPT_DIR
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly REPO_DIR
 
+# Installation replaces these defaults; shell WORK_DIR takes precedence.
+INSTALL_VERSION=''
+DEFAULT_WORK_DIR=''
+
 # Version - read from VERSION file or use embedded version
-if [[ -f "${REPO_DIR}/VERSION" ]]; then
-    VERSION="$(cat "${REPO_DIR}/VERSION" | tr -d '[:space:]')"
+if [[ -n "$INSTALL_VERSION" ]]; then
+    VERSION="$INSTALL_VERSION"
+elif [[ -f "${REPO_DIR}/VERSION" ]]; then
+    VERSION="$(tr -d '[:space:]' < "${REPO_DIR}/VERSION")"
 else
-    VERSION="2.0.0"  # Fallback version
+    VERSION="2.2.1"  # Fallback version
 fi
 readonly VERSION
 
 # Default WORK_DIR to current directory or parent of bin/ if running from repo
 if [[ -z "${WORK_DIR:-}" ]]; then
-    if [[ -d "${REPO_DIR}/config" ]]; then
+    if [[ -n "$DEFAULT_WORK_DIR" ]]; then
+        WORK_DIR="$DEFAULT_WORK_DIR"
+    elif [[ -d "${REPO_DIR}/config" ]]; then
         # Running from repository - use parent directory
         WORK_DIR="$REPO_DIR"
     else
@@ -51,8 +58,8 @@ readonly WHITELIST_FILE="${WORK_DIR}/sources_whitelist.txt"
 readonly PUBLIC_SUFFIX_FILE="${WORK_DIR}/public_suffix_list.dat"
 readonly LOG_FILE="${WORK_DIR}/script.log"
 
-# Lock file in WORK_DIR/tmp to avoid symlink attacks in world-writable /tmp
-readonly LOCK_FILE="${WORK_DIR}/tmp/domains_update.lock"
+# Keep the lock inode outside temporary cleanup.
+readonly LOCK_FILE="${WORK_DIR}/state/domains_update.lock"
 
 # Temporary directories and files
 readonly TMP_DIR="${WORK_DIR}/tmp"
@@ -62,90 +69,67 @@ readonly CACHE_DIR="${WORK_DIR}/cache"
 readonly OUTPUT_FILE="${WORK_DIR}/filtered_domains_mikrotik.txt"
 readonly OUTPUT_FILESPECIAL="${WORK_DIR}/filtered_domains_special_mikrotik.txt"
 
-# Load environment variables from .env file if it exists
+# Read data assignments without evaluating shell syntax.
+declare -A ALLOWED_ENV_KEYS=(
+    [EXPORT_GISTS]=1 [GITHUB_TOKEN]=1 [GIST_ID_MAIN]=1 [GIST_ID_SPECIAL]=1
+    [MAX_PARALLEL_JOBS]=1 [DNS_TIMEOUT]=1 [DNS_MAX_RETRIES]=1
+    [CACHE_TTL_DAYS]=1 [CACHE_INVALID_TTL_DAYS]=1
+)
 if [[ -f "${WORK_DIR}/.env" ]]; then
-    # Allowed environment variable names (whitelist).
-    # WORK_DIR is deliberately absent: .env is read from ${WORK_DIR}/.env,
-    # and WORK_DIR is already readonly by this point.
-    declare -A ALLOWED_ENV_KEYS=(
-        [EXPORT_GISTS]=1
-        [GITHUB_TOKEN]=1
-        [GIST_ID_MAIN]=1
-        [GIST_ID_SPECIAL]=1
-        [MAX_PARALLEL_JOBS]=1
-        [DNS_TIMEOUT]=1
-        [DNS_MAX_RETRIES]=1
-        [CACHE_TTL_DAYS]=1
-    )
-
-    # shellcheck disable=SC1090
-    while IFS='=' read -r key value || [[ -n "$key" ]]; do
-        # Skip comments and empty lines
-        [[ $key =~ ^[[:space:]]*#.*$ ]] && continue
-        [[ -z "$key" ]] && continue
-        # Trim whitespace from key
-        key="${key#"${key%%[![:space:]]*}"}"
+    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
+        env_line="${env_line%$'\r'}"
+        env_line="${env_line#"${env_line%%[![:space:]]*}"}"
+        [[ -z "$env_line" || "$env_line" == \#* ]] && continue
+        if [[ "$env_line" != *=* ]]; then
+            echo "WARNING: Ignoring malformed env assignment" >&2
+            continue
+        fi
+        key="${env_line%%=*}"
+        value="${env_line#*=}"
         key="${key%"${key##*[![:space:]]}"}"
-        # Validate key name (only alphanumeric and underscore)
-        if [[ ! $key =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
-            echo "WARNING: Invalid env key format: $key" >&2
+        value="${value#"${value%%[![:space:]]*}"}"
+        value="${value%"${value##*[![:space:]]}"}"
+        if [[ ! "$key" =~ ^[A-Z_][A-Z0-9_]*$ || -z "${ALLOWED_ENV_KEYS[$key]:-}" ]]; then
+            echo "WARNING: Ignoring unknown env key" >&2
             continue
         fi
-        # Check if key is in allowed list
-        if [[ -z "${ALLOWED_ENV_KEYS[$key]}" ]]; then
-            echo "WARNING: Unknown env key ignored: $key" >&2
+        if [[ "$value" == \"* || "$value" == \'* ]]; then
+            quote="${value:0:1}"
+            if [[ ${#value} -lt 2 || "${value: -1}" != "$quote" ]]; then
+                echo "WARNING: Ignoring unmatched quotes for $key" >&2
+                continue
+            fi
+            value="${value:1:${#value}-2}"
+        elif [[ "$value" == *\" || "$value" == *\' ]]; then
+            echo "WARNING: Ignoring unmatched quotes for $key" >&2
             continue
         fi
-        # Remove quotes and assign
-        value="${value%\"}"
-        value="${value#\"}"
-        value="${value%\'}"
-        value="${value#\'}"
-        if [[ "$key" == "GITHUB_TOKEN" ]]; then
-            # Keep the token out of the environment of child processes
-            # (curl, jq, grep run on untrusted downloaded data)
-            printf -v "$key" '%s' "$value"
-        else
-            export "$key=$value"
-        fi
+        printf -v "$key" '%s' "$value"
     done < "${WORK_DIR}/.env"
-
-    # Validate numeric .env values (must be positive integers).
-    # Leading zeros are rejected before any arithmetic: bash would read them
-    # as octal ("08" even aborts with "value too great for base").
-    for _env_var in DNS_TIMEOUT DNS_MAX_RETRIES MAX_PARALLEL_JOBS CACHE_TTL_DAYS; do
-        if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[0-9]+$ ]]; then
-            echo "WARNING: Invalid numeric value for $_env_var='${!_env_var}', ignoring" >&2
-            unset "$_env_var"
-        elif [[ -n "${!_env_var:-}" && "${!_env_var}" =~ ^0[0-9]+$ ]]; then
-            echo "WARNING: Leading zeros in $_env_var='${!_env_var}', ignoring" >&2
-            unset "$_env_var"
-        elif [[ -n "${!_env_var:-}" && "${!_env_var}" -eq 0 ]]; then
-            echo "WARNING: $_env_var cannot be 0, ignoring" >&2
-            unset "$_env_var"
-        fi
-    done
-
-    # Validate GIST_ID format (hex strings, 20-32 chars)
-    for _env_var in GIST_ID_MAIN GIST_ID_SPECIAL; do
-        if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[a-fA-F0-9]{20,32}$ ]]; then
-            echo "WARNING: Invalid format for $_env_var, ignoring" >&2
-            unset "$_env_var"
-        fi
-    done
-
-    # Validate EXPORT_GISTS is boolean
-    if [[ -n "${EXPORT_GISTS:-}" && "$EXPORT_GISTS" != "true" && "$EXPORT_GISTS" != "false" ]]; then
-        echo "WARNING: Invalid EXPORT_GISTS value '${EXPORT_GISTS}', defaulting to false" >&2
-        unset EXPORT_GISTS
-    fi
-
-    # Warn about loose .env permissions
-    env_perms=$(stat -c %a "${WORK_DIR}/.env" 2>/dev/null)
-    if [[ -n "$env_perms" && "$env_perms" != "600" && "$env_perms" != "400" ]]; then
-        echo "WARNING: .env file has loose permissions ($env_perms), recommend: chmod 600 .env" >&2
+    env_perms=$(stat -c %a "${WORK_DIR}/.env" 2>/dev/null || true)
+    if [[ -n "$env_perms" && "$env_perms" != 600 && "$env_perms" != 400 ]]; then
+        echo "WARNING: .env permissions should be 600 or 400" >&2
     fi
 fi
+# Validate both .env and shell settings before arithmetic or network calls.
+for _env_var in DNS_TIMEOUT DNS_MAX_RETRIES MAX_PARALLEL_JOBS CACHE_TTL_DAYS CACHE_INVALID_TTL_DAYS; do
+    if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[1-9][0-9]{0,6}$ ]]; then
+        echo "WARNING: Invalid numeric value for $_env_var, using default" >&2
+        unset "$_env_var"
+    fi
+done
+for _env_var in GIST_ID_MAIN GIST_ID_SPECIAL; do
+    if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[a-fA-F0-9]{20,32}$ ]]; then
+        echo "WARNING: Invalid format for $_env_var, ignoring" >&2
+        unset "$_env_var"
+    fi
+done
+if [[ -n "${EXPORT_GISTS:-}" && "$EXPORT_GISTS" != true && "$EXPORT_GISTS" != false ]]; then
+    echo "WARNING: Invalid EXPORT_GISTS value, using false" >&2
+    unset EXPORT_GISTS
+fi
+# An inherited export attribute survives assignment unless explicitly removed.
+export -n GITHUB_TOKEN 2>/dev/null || true
 
 # GitHub Gist settings !Use env var if available
 readonly EXPORT_GISTS=${EXPORT_GISTS:-false}  # Default to false if not set
@@ -165,6 +149,8 @@ readonly DNS_MAX_RETRIES=${DNS_MAX_RETRIES:-3}
 
 # Cache settings
 readonly CACHE_TTL_DAYS=${CACHE_TTL_DAYS:-90}
+readonly CACHE_INVALID_TTL_DAYS=${CACHE_INVALID_TTL_DAYS:-1}
+readonly CACHE_INVALID_TTL_SECONDS=$((CACHE_INVALID_TTL_DAYS * 24 * 60 * 60))
 readonly CACHE_TTL_SECONDS=$((CACHE_TTL_DAYS * 24 * 60 * 60))
 readonly CACHE_MAX_SIZE_MB=1024
 
@@ -183,12 +169,6 @@ export DNS_MAX_RETRIES
 
 # Enable debugging
 # exec 2>"${WORK_DIR}/debug.log"
-
-# Create log directory if it doesn't exist
-mkdir -p "$(dirname "$LOG_FILE")"
-
-# Clear old log
-: > "$LOG_FILE"
 
 # Function to display help
 show_help() {
@@ -261,7 +241,6 @@ parse_arguments() {
                 exit 1
                 ;;
         esac
-        shift
     done
 }
 
@@ -294,33 +273,51 @@ error() {
     exit 1
 }
 
-# Lock function
+# Lock lifetime includes all background workers.
+LOCK_HELD=false
 acquire_lock() {
-    log "Attempting to acquire lock..."
-
-    # Create file descriptor for the entire script
-    exec 9>"$LOCK_FILE"
-
+    exec 9>>"$LOCK_FILE" || return 1
     if ! flock -n 9; then
-        log "Script is already running (PID: $(cat "$LOCK_FILE" 2>/dev/null || echo 'unknown'))"
-        exit 1
+        echo "Script is already running (PID: $(cat "$LOCK_FILE" 2>/dev/null))" >&2
+        exec 9>&-
+        return 1
     fi
-
-    echo $$ >&9
+    LOCK_HELD=true
+    printf '%s\n' "$$" > "$LOCK_FILE"
     log "Lock acquired successfully"
 }
 
-# Unlock function
-release_lock() {
-    log "Releasing lock..."
-    flock -u 9 2>/dev/null || true
-    exec 9>&- 2>/dev/null || true
-    rm -f "$LOCK_FILE"
+stop_workers() {
+    local roots pid children remaining attempt
+    roots="$(jobs -pr) ${DNS_WORKER_PIDS[*]:-}"
+    children="$roots"
+    # Snapshot process IDs only; commands can contain credentials.
+    for pid in $roots; do
+        children+=" $(ps -eo pid=,ppid= | awk -v root="$pid" '
+            {parent[$1]=$2}
+            END {for (p in parent) {q=p; while (q in parent && q != root) q=parent[q]; if (q==root) print p}}')"
+    done
+    for pid in $children; do kill -TERM "$pid" 2>/dev/null || true; done
+    for attempt in {1..40}; do
+        remaining=false
+        for pid in $children; do
+            if ps -o stat= -p "$pid" 2>/dev/null | grep -q '^[[:space:]]*[^Z]'; then remaining=true; fi
+        done
+        [[ "$remaining" == true ]] || break
+        sleep 0.05
+    done
+    for pid in $children; do kill -KILL "$pid" 2>/dev/null || true; done
+    for pid in $roots; do wait "$pid" 2>/dev/null || true; done
+    DNS_WORKER_PIDS=()
 }
 
-# Signal handling - per-signal traps for guaranteed exit codes
-trap 'log "Script interrupted (SIGINT)"; trap_cleanup 130' INT
-trap 'log "Script interrupted (SIGTERM)"; trap_cleanup 143' TERM
+release_lock() {
+    [[ "$LOCK_HELD" == true ]] || return 0
+    stop_workers
+    flock -u 9 2>/dev/null || true
+    exec 9>&-
+    LOCK_HELD=false
+}
 
 init_directories() {
     log "Initialization started..."
@@ -363,9 +360,9 @@ init_directories() {
     done
 
     # Ensure proper ownership
-    if [[ -n "$SUDO_USER" ]]; then
-        if ! chown -R "$SUDO_USER:$SUDO_USER" "$TMP_DIR"; then
-            log "WARNING: Failed to set ownership for ${TMP_DIR}"
+    if [[ -n "${SUDO_USER:-}" ]]; then
+        if ! chown -R "$SUDO_USER:$SUDO_USER" "$TMP_DIR" "$STATE_DIR" "$CACHE_DIR"; then
+            log "WARNING: Failed to set directory ownership"
         fi
     fi
 
@@ -449,8 +446,8 @@ cleanup() {
         cache_size=$(du -sm "$CACHE_DIR" 2>/dev/null | cut -f1)
         if [[ -n "$cache_size" ]] && (( cache_size > CACHE_MAX_SIZE_MB )); then
             log "Cache size exceeds ${CACHE_MAX_SIZE_MB}MB, cleaning oldest files..."
-            find "$CACHE_DIR" -type f -name "*.cache" -exec stat -c '%Y %n' {} + 2>/dev/null | \
-                sort -n | head -n 1000 | cut -d' ' -f2- | xargs rm -f 2>/dev/null || {
+            find "$CACHE_DIR" -type f -name "*.cache" -exec stat --printf '%Y %n\0' {} + 2>/dev/null | \
+                sort -z -n | head -z -n 1000 | cut -z -d' ' -f2- | xargs -0 -r rm -f -- 2>/dev/null || {
                 log "WARNING: Failed to clean large cache"
             }
         fi
@@ -463,7 +460,7 @@ cleanup() {
 cleanup_invalid_cache() {
     log "Cleaning invalid cache entries..."
     find "$CACHE_DIR" -type f -name "*.cache" -print0 | while IFS= read -r -d '' f; do
-        if ! grep -qE "^(valid|invalid)$" "$f"; then
+        if ! grep -qE "^(valid|nxdomain)$" "$f"; then
             rm -f "$f"
         fi
     done
@@ -474,74 +471,41 @@ log_cache_stats() {
     # find -exec batches arguments; a glob here would exceed ARG_MAX on large caches
     total=$(find "$CACHE_DIR" -type f -name "*.cache" | wc -l)
     valid=$(find "$CACHE_DIR" -type f -name "*.cache" -exec grep -l "^valid$" {} + 2>/dev/null | wc -l)
-    invalid=$(find "$CACHE_DIR" -type f -name "*.cache" -exec grep -l "^invalid$" {} + 2>/dev/null | wc -l)
+    invalid=$(find "$CACHE_DIR" -type f -name "*.cache" -exec grep -l "^nxdomain$" {} + 2>/dev/null | wc -l)
     log "Cache stats - Total: $total, Valid: $valid, Invalid: $invalid"
 }
 
-# Enhanced trap handling
+# EXIT cleanup keeps the lock until every child has terminated.
 trap_cleanup() {
     local exit_code=${1:-$?}
-    log "Caught exit signal. Performing cleanup..."
-
-    # Save current work if possible
-    if [[ -f "${TMP_DIR}/main_filtered.txt" ]]; then
-        if ! cp "${TMP_DIR}/main_filtered.txt" "${WORK_DIR}/main_filtered.backup" 2>/dev/null; then
-            log "WARNING: Failed to save main list backup"
-        fi
+    trap - EXIT
+    trap '' INT TERM
+    if ! rollback_publication; then
+        log "ERROR: Failed to restore previous outputs during cleanup"
+        exit_code=1
     fi
-
-    if [[ -f "${WORK_DIR}/main_filtered.backup" ]]; then
-        log "Saved main list backup"
+    if [[ "$LOCK_HELD" == true ]]; then
+        stop_workers
+        cleanup || true
+        release_lock
     fi
-
-    if [[ -f "${TMP_DIR}/special_filtered.txt" && -s "${TMP_DIR}/special_filtered.txt" ]]; then
-        if ! cp "${TMP_DIR}/special_filtered.txt" "${WORK_DIR}/special_filtered.backup" 2>/dev/null; then
-            log "WARNING: Failed to save special list backup"
-        else
-            log "Saved special list backup"
-        fi
-    fi
-
-    cleanup
-    release_lock
-
-    log "Script terminated with exit code: ${exit_code}"
-    exit "${exit_code}"
+    exit "$exit_code"
 }
 
-# Authenticated GitHub API request via temp header file (avoids token in process list)
+# Keep authentication in a private header file, never in argv or child env.
 github_api_request() {
-    local method=$1
-    local url=$2
-    local data=$3
-    local auth_file
-
-    auth_file=$(mktemp "${TMP_DIR}/auth.XXXXXX")
-    chmod 600 "$auth_file"
-    printf 'Authorization: token %s' "$GITHUB_TOKEN" > "$auth_file"
-
-    local response
-    local rc=0
-    if [[ -n "$data" ]]; then
-        # $data is a path to a file containing JSON payload (avoids ARG_MAX limits)
-        response=$(curl -s -X "$method" \
-            -H @"$auth_file" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Content-Type: application/json" \
-            --proto '=https' \
-            -d @"$data" \
-            "$url") || rc=$?
-    else
-        response=$(curl -s -X "$method" \
-            -H @"$auth_file" \
-            -H "Accept: application/vnd.github.v3+json" \
-            --proto '=https' \
-            "$url") || rc=$?
-    fi
-
+    local method=$1 url=$2 data=${3:-} auth_file response rc=0
+    auth_file=$(mktemp "${TMP_DIR}/auth.XXXXXX") || return 1
+    chmod 600 "$auth_file" || { rm -f "$auth_file"; return 1; }
+    printf 'Authorization: token %s\n' "$GITHUB_TOKEN" > "$auth_file"
+    local args=(--silent --show-error --fail --connect-timeout 10 --max-time 30
+        --proto '=https' -X "$method" -H "@$auth_file"
+        -H "Accept: application/vnd.github.v3+json")
+    [[ -z "$data" ]] || args+=(-H "Content-Type: application/json" -d "@$data")
+    response=$(curl "${args[@]}" "$url") || rc=$?
     rm -f "$auth_file"
-    echo "$response"
-    return $rc
+    [[ $rc -eq 0 ]] || return "$rc"
+    printf '%s\n' "$response"
 }
 
 # Function to check dependencies
@@ -557,188 +521,159 @@ check_dependencies() {
 # Function to check domain via DNS
 check_domain() {
     local domain=$1
-
-    # Defense-in-depth: validate domain even though upstream should filter
-    if ! validate_domain "$domain"; then
-        log "WARNING: Invalid domain passed to check_domain: $domain"
-        return 1
-    fi
-
-    local retry_count=0
+    validate_domain "$domain" || return 1
     local cache_file="${CACHE_DIR}/${domain}.cache"
-
+    local cache_time cache_status now ttl
     if [[ -f "$cache_file" ]]; then
-        local cache_time
+        cache_status=$(<"$cache_file")
+        ttl=$CACHE_TTL_SECONDS
+        [[ "$cache_status" == nxdomain ]] && ttl=${CACHE_INVALID_TTL_SECONDS:-86400}
         if cache_time=$(stat -c %Y "$cache_file" 2>/dev/null); then
-            local current_time
-            current_time=$(date +%s)
-            if (( current_time - cache_time < CACHE_TTL_SECONDS )); then
-                local cache_status
-                cache_status=$(cat "$cache_file" 2>/dev/null)
-                if [[ "$cache_status" != "valid" && "$cache_status" != "invalid" ]]; then
-                    log "WARNING: Invalid cache entry for $domain"
-                    rm -f "$cache_file"
-                else
-                    [[ "$cache_status" == "valid" ]] && return 0
-                    return 1
-                fi
+            now=$(date +%s)
+            if (( now - cache_time < ttl )); then
+                [[ "$cache_status" == valid ]] && return 0
+                [[ "$cache_status" == nxdomain ]] && return 1
             fi
-        else
-            rm -f "$cache_file"
         fi
     fi
-
-    while [[ $retry_count -lt $DNS_MAX_RETRIES ]]; do
-        [[ $retry_count -gt 0 ]] && sleep 2
-
-        if curl --connect-timeout "$DNS_TIMEOUT" --max-time "$DNS_TIMEOUT" -s -f \
+    local attempt response status
+    for ((attempt=0; attempt<DNS_MAX_RETRIES; attempt++)); do
+        (( attempt > 0 )) && sleep 2
+        # NOERROR confirms existence, including suffix domains without apex A.
+        if response=$(curl --connect-timeout "$DNS_TIMEOUT" --max-time "$DNS_TIMEOUT" -s -f \
             --header "accept: application/dns-json" \
-            "https://cloudflare-dns.com/dns-query?name=${domain}&type=A" | \
-            jq -e '.Status == 0 and (.Answer | length > 0)' >/dev/null 2>&1; then
-            echo "valid" > "$cache_file"
-            return 0
+            "https://cloudflare-dns.com/dns-query?name=${domain}&type=A"); then
+            if status=$(jq -er '.Status | select(type == "number")' <<< "$response" 2>/dev/null); then
+                case "$status" in
+                    0) printf 'valid\n' > "$cache_file" || return 3; return 0 ;;
+                    3) printf 'nxdomain\n' > "$cache_file" || return 3; return 1 ;;
+                esac
+            fi
         fi
-
-        ((retry_count++)) || true
     done
-
-    echo "invalid" > "$cache_file"
-    return 1
+    return 2
 }
 
 
 # Function for parallel domain checking
 check_domains_parallel() {
-    local input=$1
-    local output=$2
-    local temp_output="${output}.tmp"
-    local valid_count=0
-
-    # Check if input file exists
-    if [[ ! -f "$input" ]]; then
-        log "ERROR: Input file $input does not exist"
-        return 1
-    fi
-
-    # Check write permissions for output file
-    if [[ ! -w "$(dirname "$output")" ]]; then
-        log "ERROR: No write permissions for directory $(dirname "$output")"
-        return 1
-    fi
-
-    local total
+    local input=$1 output=$2
+    [[ -r "$input" && -w "$(dirname "$output")" ]] || return 3
+    local total results_dir worker_count worker pid rc failure=0
     total=$(wc -l < "$input")
-    if [[ $total -eq 0 ]]; then
-        log "WARNING: Input file $input is empty"
-        return 1
-    fi
-
-    log "Starting DNS checks for: $input (total domains: $total)"
-    : > "$temp_output"
-
-    local current=0
-    local processed=0
-
-    # Create temporary directory for atomic result writing (one file per domain)
-    local results_dir
-    results_dir=$(mktemp -d "${TMP_DIR}/dns_results_XXXXXX")
-    chmod 700 "$results_dir"
-
-    while IFS= read -r domain; do
+    (( total > 0 )) || return 1
+    results_dir=$(mktemp -d "${TMP_DIR}/dns_results_XXXXXX") || return 3
+    worker_count=$MAX_PARALLEL_JOBS
+    (( worker_count > total )) && worker_count=$total
+    log "Starting DNS checks: $total domains, $worker_count workers"
+    # A shared file offset and a read lock distribute work as workers finish.
+    exec 7< "$input" || return 3
+    DNS_WORKER_PIDS=()
+    for ((worker=0; worker<worker_count; worker++)); do
         (
-            if check_domain "$domain"; then
-                # Use atomic file creation per domain to avoid race conditions
-                local domain_hash
-                domain_hash=$(echo "$domain" | md5sum | cut -d' ' -f1)
-                echo "$domain" > "${results_dir}/${domain_hash}.valid"
-                log "Domain $domain is valid"
-            fi
+            exec 8> "${results_dir}/queue.lock" || exit 3
+            local domain result processed=0 worker_failure=0
+            : > "${results_dir}/${worker}.valid" || exit 3
+            while true; do
+                flock -x 8 || exit 3
+                if ! IFS= read -r domain <&7; then
+                    flock -u 8
+                    break
+                fi
+                flock -u 8 || exit 3
+                if check_domain "$domain"; then
+                    printf '%s\n' "$domain" >> "${results_dir}/${worker}.valid" || exit 3
+                else
+                    result=$?
+                    if (( result == 2 )); then
+                        (( worker_failure < 2 )) && worker_failure=2
+                    elif (( result != 1 )); then
+                        worker_failure=3
+                    fi
+                fi
+                ((processed+=1))
+                if [[ $((processed % 100)) -eq 0 ]]; then
+                    log "DNS worker $worker processed $processed domains"
+                fi
+            done
+            exit "$worker_failure"
         ) &
-
-        ((current++)) || true
-        ((processed++)) || true
-
-        # Control parallel processes
-        if [[ $((current % MAX_PARALLEL_JOBS)) -eq 0 ]] || [[ $processed -eq $total ]]; then
-            wait
-            # Count intermediate valid domains
-            valid_count=$(find "$results_dir" -name "*.valid" 2>/dev/null | wc -l)
-            current=0
-            # Update progress every 100 domains
-            if [[ $((processed % 100)) -eq 0 ]] || [[ $processed -eq $total ]]; then
-                log "Progress: $processed out of $total (valid: $valid_count)"
-            fi
-        fi
-    done < "$input"
-
-    wait
-
-    # Collect all results from individual files
-    if [[ -d "$results_dir" ]]; then
-        find "$results_dir" -name "*.valid" -exec cat {} \; 2>/dev/null | sort -u > "$temp_output"
-        rm -rf "$results_dir"
-
-        if [[ -s "$temp_output" ]]; then
-            mv "$temp_output" "$output"
-            local final_count
-            final_count=$(wc -l < "$output")
-            log "DNS check completed successfully. Valid domains: $final_count"
-            return 0
+        DNS_WORKER_PIDS+=("$!")
+    done
+    exec 7<&-
+    for pid in "${DNS_WORKER_PIDS[@]}"; do
+        if wait "$pid"; then
+            rc=0
         else
-            log "ERROR: No valid domains after check"
-            rm -f "$temp_output"
-            return 1
+            rc=$?
         fi
-    else
-        log "ERROR: Results directory not found"
-        return 1
+        if (( rc == 2 && failure < 2 )); then failure=2
+        elif (( rc != 0 && rc != 2 )); then failure=3
+        fi
+    done
+    DNS_WORKER_PIDS=()
+    if (( failure == 0 )); then
+        if ! sort -u "${results_dir}/"*.valid > "${results_dir}/output"; then
+            failure=3
+        elif [[ ! -s "${results_dir}/output" ]]; then
+            failure=1
+        elif ! mv "${results_dir}/output" "$output"; then
+            failure=3
+        fi
     fi
+    rm -f "${results_dir}/"*.valid "${results_dir}/queue.lock" "${results_dir}/output"
+    rmdir "$results_dir"
+    if (( failure == 0 )); then
+        log "DNS checks complete: $total processed, $(wc -l < "$output") valid"
+    else
+        log "DNS checks failed (status: $failure); output preserved"
+    fi
+    return "$failure"
 }
 
 # Function to load Public Suffix List
 load_public_suffix_list() {
-    local needs_update=false
-    
-    if [[ ! -f "$PUBLIC_SUFFIX_FILE" ]]; then
-        needs_update=true
-    elif [[ -n $(find "$PUBLIC_SUFFIX_FILE" -mtime +"$PSL_UPDATE_DAYS" -print 2>/dev/null) ]]; then
-        needs_update=true
+    if [[ -s "$PUBLIC_SUFFIX_FILE" ]] && ! find "$PUBLIC_SUFFIX_FILE" -mtime +"$PSL_UPDATE_DAYS" -print | grep -q .; then
+        return 0
     fi
-    
-    if [[ "$needs_update" == "true" ]]; then
-        log "Updating Public Suffix List..."
-        local temp_psl="${PUBLIC_SUFFIX_FILE}.tmp"
-        
-        if ! curl --proto '=https' -sSL --max-time 60 --max-filesize "$MAX_DOWNLOAD_BYTES" "https://publicsuffix.org/list/public_suffix_list.dat" -o "$temp_psl"; then
-            log "ERROR: Failed to download Public Suffix List"
-            [[ -f "$PUBLIC_SUFFIX_FILE" ]] && return 0  # Use existing file
-            error "No Public Suffix List available. Check internet connection."
-        fi
-        
-        # Filter and validate
-        grep -v '^//' "$temp_psl" | grep -v '^$' | grep -v '^!' > "${temp_psl}.filtered"
-        
-        if [[ ! -s "${temp_psl}.filtered" ]]; then
-            rm -f "$temp_psl" "${temp_psl}.filtered"
-            [[ -f "$PUBLIC_SUFFIX_FILE" ]] && return 0  # Use existing file
-            error "Downloaded Public Suffix List is empty or corrupted."
-        fi
-        
-        mv "${temp_psl}.filtered" "$PUBLIC_SUFFIX_FILE"
+    log "Updating Public Suffix List..."
+    local temp_psl filtered
+    temp_psl=$(mktemp "${TMP_DIR}/psl.XXXXXX") || return 1
+    filtered=$(mktemp "${TMP_DIR}/psl-filtered.XXXXXX") || { rm -f "$temp_psl"; return 1; }
+    if curl --proto '=https' --proto-redir '=https' -fsSL --connect-timeout 10 --max-time 60 \
+        --max-filesize "$MAX_DOWNLOAD_BYTES" "https://publicsuffix.org/list/public_suffix_list.dat" -o "$temp_psl" &&
+       awk '
+        { sub(/\r$/, "") }
+        /^\/\// || /^$/ { next }
+        /[[:space:]\/<>:;&"=]/ { bad=1; next }
+        /^!/ { next }
+        { print; count++ }
+        END { if (bad || count==0) exit 1 }
+       ' "$temp_psl" > "$filtered" && [[ -s "$filtered" ]] &&
+       chmod 600 "$filtered" && mv "$filtered" "$PUBLIC_SUFFIX_FILE"; then
         rm -f "$temp_psl"
         log "Public Suffix List updated: $(wc -l < "$PUBLIC_SUFFIX_FILE") entries"
+        return 0
     fi
-    return 0
+    rm -f "$temp_psl" "$filtered"
+    log "WARNING: Public Suffix List download or validation failed"
+    [[ -s "$PUBLIC_SUFFIX_FILE" ]]
 }
 
 # Function to validate domain
 validate_domain() {
-    local domain="$1"
-    [[ "$domain" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$ ]] || return 1
-    [[ "$domain" =~ \.\. ]] && return 1
-    [[ "$domain" =~ (^|\.)-|-(\.|$) ]] && return 1
-    [[ ${#domain} -gt 253 ]] && return 1
-    return 0
+    local domain=$1 label
+    [[ ${#domain} -le 253 && "$domain" == *.* ]] || return 1
+    [[ "$domain" =~ ^[a-zA-Z0-9.-]+$ ]] || return 1
+    local tld=${domain##*.}
+    [[ "$tld" =~ ^([a-zA-Z]{2,63}|[xX][nN]--[a-zA-Z0-9-]{1,59})$ ]] || return 1
+    local -a labels
+    IFS=. read -ra labels <<< "$domain"
+    [[ "$domain" != *. ]] || return 1
+    for label in "${labels[@]}"; do
+        [[ ${#label} -ge 1 && ${#label} -le 63 ]] || return 1
+        [[ "$label" != -* && "$label" != *- ]] || return 1
+    done
 }
 
 # Function to extract domains from various formats
@@ -746,7 +681,7 @@ extract_domains() {
     local input=$1
     local output=$2
     local temp_output
-    temp_output=$(mktemp "${TMP_DIR}/extracted_XXXXXX")
+    temp_output=$(mktemp "${TMP_DIR}/extracted_XXXXXX") || return 1
 
     log "Extracting domains from: $input"
 
@@ -795,19 +730,17 @@ extract_domains() {
                 fi
                 ((extracted++)) || true
             fi
-        elif [[ "$line" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$ ]]; then
-            if validate_domain "$line"; then
-                if ! echo "$line" >> "$temp_output"; then
-                    log "ERROR: Failed to write domain to temporary file"
-                    rm -f "$temp_output"
-                    return 1
-                fi
-                ((extracted++)) || true
+        elif validate_domain "$line"; then
+            if ! echo "$line" >> "$temp_output"; then
+                log "ERROR: Failed to write domain to temporary file"
+                rm -f "$temp_output"
+                return 1
             fi
+            ((extracted++)) || true
         fi
 
         # Progress logging for large files
-        if (( processed % 10000 == 0 )); then
+        if [[ $((processed % 10000)) -eq 0 ]]; then
             log "Processed $processed lines, extracted $extracted domains"
         fi
     done < "$input"
@@ -824,7 +757,7 @@ extract_domains() {
     # Validate final output
     if ! [[ -s "$output" ]]; then
         log "WARNING: No domains were extracted"
-        return 1
+        return 2
     fi
 
     local final_count
@@ -863,13 +796,19 @@ initial_filter() {
         log "WARNING: Failed to set permissions for temporary file"
     fi
 
-    # Multi-stage filtering with error checking
-    if ! grep -E '^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$' "$input" | \
-         grep -v '^#' | \
-         grep -v '^$' | \
-         tr '[:upper:]' '[:lower:]' | \
-         awk 'length <= 253' > "$temp_output"; then
-        log "ERROR: Domain filtering failed"
+    if ! awk '
+        {
+            d=tolower($0)
+            if (length(d)>253 || d !~ /^[a-z0-9.-]+$/) next
+            n=split(d,a,"."); if(n<2) next
+            t=a[n]
+            if(t !~ /^[a-z]+$/ && t !~ /^xn--[a-z0-9-]+$/) next
+            if(t !~ /^xn--/ && length(t)<2) next
+            ok=1
+            for(i=1;i<=n;i++) if(length(a[i])<1 || length(a[i])>63 || a[i] ~ /^-/ || a[i] ~ /-$/) ok=0
+            if(ok) print d
+        }
+    ' "$input" > "$temp_output"; then
         rm -f "$temp_output"
         return 1
     fi
@@ -898,164 +837,40 @@ initial_filter() {
 
 # Function to process and classify domains
 process_domains() {
-    local input=$1
-    local output_dir=$2
-
-    log "Classifying domains from: $input"
-
-    if ! [[ -f "$input" ]]; then
-        log "ERROR: Input file does not exist: $input"
-        return 1
-    fi
-
-    if ! mkdir -p "${output_dir}"; then
-        log "ERROR: Failed to create output directories"
-        return 1
-    fi
-
-    local second_level="${output_dir}/second.txt"
-    local regional="${output_dir}/regional.txt"
-    local other="${output_dir}/other.txt"
-    local base_domains="${output_dir}/base_domains.tmp"
-    local domain_registry="${output_dir}/domain_registry.tmp"
-
-    # Initialize files with proper permissions
-    for file in "$second_level" "$regional" "$other" "$base_domains" "$domain_registry"; do
-        if ! : > "$file"; then
-            log "ERROR: Failed to create/clear file: $file"
-            return 1
-        fi
-        if ! chmod 600 "$file"; then
-            log "WARNING: Failed to set permissions for: $file"
-        fi
+    local input=$1 output_dir=$2 file
+    [[ -r "$input" && -r "$PUBLIC_SUFFIX_FILE" ]] || return 1
+    mkdir -p "$output_dir" || return 1
+    for file in second regional other; do
+        : > "${output_dir}/${file}.txt" || return 1
+        chmod 600 "${output_dir}/${file}.txt" || return 1
     done
-
-    # First pass - register domains
-    while IFS= read -r domain; do
-        local parts
-        IFS='.' read -ra parts <<< "$domain"
-        local levels=${#parts[@]}
-
-        if [[ $levels -gt 4 ]]; then
-            domain="${parts[-4]}.${parts[-3]}.${parts[-2]}.${parts[-1]}"
-            levels=4
-        fi
-
-        if ! echo "$domain $levels" >> "$domain_registry"; then
-            log "ERROR: Failed to write to domain registry"
-            return 1
-        fi
-    done < "$input"
-
-    # Sort registry by level count (ascending) so parents are classified before children
-    if ! sort -t' ' -k2,2n -k1,1 "$domain_registry" > "${domain_registry}.sorted"; then
-        log "ERROR: Failed to sort domain registry"
-        return 1
-    fi
-    if ! mv "${domain_registry}.sorted" "$domain_registry"; then
-        log "ERROR: Failed to rename sorted domain registry"
-        rm -f "${domain_registry}.sorted"
-        return 1
-    fi
-
-    # Second pass - classify domains
-    while IFS=' ' read -r domain levels; do
-        local parts
-        IFS='.' read -ra parts <<< "$domain"
-
-        if [[ $levels -eq 2 ]]; then
-            if ! echo "$domain" >> "$second_level" || \
-               ! echo "$domain" >> "$base_domains"; then
-                log "ERROR: Failed to write second-level domain: $domain"
-                return 1
-            fi
-        elif [[ $levels -eq 3 ]]; then
-            local base_domain="${parts[-2]}.${parts[-1]}"
-            if grep -Fxq "$base_domain" "$PUBLIC_SUFFIX_FILE"; then
-                if ! echo "$domain" >> "$regional" || \
-                   ! echo "$domain" >> "$base_domains"; then
-                    log "ERROR: Failed to write regional domain: $domain"
-                    return 1
-                fi
-            else
-                if ! grep -Fxq "$base_domain" "$second_level"; then
-                    if ! echo "$domain" >> "$other" || \
-                       ! echo "$domain" >> "$base_domains"; then
-                        log "ERROR: Failed to write other domain: $domain"
-                        return 1
-                    fi
-                fi
-            fi
-        elif [[ $levels -eq 4 ]]; then
-            local base_domain="${parts[-2]}.${parts[-1]}"
-            local third_level="${parts[-3]}.${parts[-2]}.${parts[-1]}"
-
-            if grep -Fxq "$base_domain" "$PUBLIC_SUFFIX_FILE"; then
-                if ! grep -Fxq "$third_level" "$regional"; then
-                    if ! echo "$domain" >> "$other" || \
-                       ! echo "$domain" >> "$base_domains"; then
-                        log "ERROR: Failed to write fourth-level domain: $domain"
-                        return 1
-                    fi
-                fi
-            else
-                if ! grep -Fxq "$base_domain" "$second_level" && \
-                   ! grep -Fxq "$third_level" "$other"; then
-                    if ! echo "$domain" >> "$other" || \
-                       ! echo "$domain" >> "$base_domains"; then
-                        log "ERROR: Failed to write fourth-level domain: $domain"
-                        return 1
-                    fi
-                fi
-            fi
-        fi
-    done < "$domain_registry"
-
-    # Sort and deduplicate with error checking
-    for file in "$second_level" "$regional" "$other"; do
-        if [[ -f "$file" ]]; then
-            local temp_file="${file}.tmp"
-            if ! sort -u "$file" > "$temp_file"; then
-                log "ERROR: Failed to sort file: $file"
-                rm -f "$temp_file"
-                return 1
-            fi
-            if ! mv "$temp_file" "$file"; then
-                log "ERROR: Failed to update sorted file: $file"
-                rm -f "$temp_file"
-                return 1
-            fi
-        fi
+    # Classify parents first; hash lookups avoid per-domain subprocesses.
+    if ! awk '{print split($0,a,"."),$0}' "$input" | sort -k1,1n -k2,2 | \
+        awk -v psl="$PUBLIC_SUFFIX_FILE" -v dir="$output_dir" '
+        BEGIN {while((getline line < psl)>0) suffix[line]=1; close(psl)}
+        {
+            n=$1; d=$2; split(d,a,".")
+            covered=0; parent=d
+            while(index(parent,".")) {
+                sub(/^[^.]*\./,"",parent)
+                if(parent in chosen) {covered=1; break}
+            }
+            if(covered || d in chosen) next
+            base=a[n-1] "." a[n]
+            if(n==2) kind="second"
+            else if(n==3 && base in suffix) kind="regional"
+            else kind="other"
+            print d > (dir "/" kind ".txt")
+            chosen[d]=1
+        }
+    '; then return 1; fi
+    local count=0
+    for file in second regional other; do
+        sort -u "${output_dir}/${file}.txt" -o "${output_dir}/${file}.txt" || return 1
+        ((count += $(wc -l < "${output_dir}/${file}.txt"))) || true
     done
-
-    # Cleanup temporary files
-    rm -f "$base_domains" "$domain_registry"
-
-    # Validate results and generate statistics
-    local second_count=0 regional_count=0 other_count=0
-
-    if [[ -f "$second_level" ]]; then
-        second_count=$(wc -l < "$second_level")
-    fi
-    if [[ -f "$regional" ]]; then
-        regional_count=$(wc -l < "$regional")
-    fi
-    if [[ -f "$other" ]]; then
-        other_count=$(wc -l < "$other")
-    fi
-
-    log "Classification results:"
-    log "- Second-level domains: $second_count"
-    log "- Regional domains: $regional_count"
-    log "- Other domains: $other_count"
-
-    # Verify we have at least some results
-    if (( second_count + regional_count + other_count == 0 )); then
-        log "ERROR: No domains classified"
-        return 1
-    fi
-
-    return 0
+    log "Classified domains: $count"
+    (( count > 0 ))
 }
 
 # Function to prepare domains for DNS check
@@ -1111,110 +926,34 @@ prepare_domains_for_dns_check() {
 
 # Function to apply whitelist
 apply_whitelist() {
-    local input=$1
-    local whitelist=$2
-    local output=$3
-    local temp_pattern
-    temp_pattern=$(mktemp "${TMP_DIR}/whitelist_pattern_XXXXXX")
-    local temp_output
-    temp_output=$(mktemp "${TMP_DIR}/whitelist_filtered_XXXXXX")
-
-    log "Applying whitelist to: $input"
-
-    # Validate input files
-    for file in "$input" "$whitelist"; do
-        if ! [[ -f "$file" ]]; then
-            log "ERROR: Required file does not exist: $file"
-            return 1
-        fi
-        if ! [[ -r "$file" ]]; then
-            log "ERROR: Cannot read file: $file"
-            return 1
-        fi
-    done
-
-    # Initialize temporary files
-    for temp_file in "$temp_pattern" "$temp_output"; do
-        if ! : > "$temp_file"; then
-            log "ERROR: Failed to create temporary file: $temp_file"
-            return 1
-        fi
-        if ! chmod 600 "$temp_file"; then
-            log "WARNING: Failed to set permissions for: $temp_file"
-        fi
-    done
-
-    # Process whitelist and create patterns
-    while IFS= read -r domain; do
-        local parts
-        IFS='.' read -ra parts <<< "$domain"
-        local levels=${#parts[@]}
-
-        case $levels in
-            2)
-                # Second-level domain (escape dots for regex)
-                local escaped="${domain//./\\.}"
-                echo "^${escaped}$" >> "$temp_pattern"
-                echo "\\.${escaped}$" >> "$temp_pattern"
-                ;;
-            3)
-                # Check if it's a regional domain
-                local base_domain="${parts[-2]}.${parts[-1]}"
-                local escaped="${domain//./\\.}"
-                if grep -Fxq "$base_domain" "$PUBLIC_SUFFIX_FILE"; then
-                    echo "^${escaped}$" >> "$temp_pattern"
-                    echo "\\.${escaped}$" >> "$temp_pattern"
-                else
-                    echo "^${escaped}$" >> "$temp_pattern"
-                fi
-                ;;
-            *)
-                # 4+ level domains - exact match only
-                local escaped="${domain//./\\.}"
-                echo "^${escaped}$" >> "$temp_pattern"
-                ;;
-        esac
-    done < "$whitelist"
-
-    # Apply whitelist patterns
-    if [[ -s "$temp_pattern" ]]; then
-        local grep_exit
-        grep -vf "$temp_pattern" "$input" > "$temp_output" || {
-            grep_exit=$?
-            if [[ $grep_exit -eq 1 ]]; then
-                log "WARNING: All domains matched whitelist, output is empty"
-                : > "$temp_output"
-            else
-                log "ERROR: Failed to apply whitelist patterns (grep exit code: $grep_exit)"
-                rm -f "$temp_pattern" "$temp_output"
-                return 1
-            fi
+    local input=$1 whitelist=$2 output=$3 temp_output
+    [[ -r "$input" && -r "$whitelist" && -r "$PUBLIC_SUFFIX_FILE" ]] || return 1
+    temp_output=$(mktemp "${TMP_DIR}/whitelist_filtered_XXXXXX") || return 1
+    if ! awk -v psl="$PUBLIC_SUFFIX_FILE" -v whitelist="$whitelist" '
+        BEGIN {
+            while((getline d < psl)>0) public[d]=1
+            close(psl)
+            while((getline d < whitelist)>0) {
+                if(d=="") continue
+                exact[d]=1; n=split(d,a,".")
+                if(n==2 || (n==3 && (a[n-1] "." a[n]) in public)) suffix[d]=1
+            }
+            close(whitelist)
         }
-    else
-        if ! cp "$input" "$temp_output"; then
-            log "ERROR: Failed to copy input to temporary file"
-            rm -f "$temp_pattern" "$temp_output"
-            return 1
-        fi
-    fi
-
-    # Final move to output
-    if ! mv "$temp_output" "$output"; then
-        log "ERROR: Failed to update output file"
-        rm -f "$temp_pattern" "$temp_output"
+        {
+            if($0 in exact) next
+            parent=$0; skip=0
+            while(index(parent,".")) {
+                sub(/^[^.]*\./,"",parent)
+                if(parent in suffix) {skip=1; break}
+            }
+            if(!skip) print
+        }
+    ' "$input" > "$temp_output"; then
+        rm -f "$temp_output"
         return 1
     fi
-
-    rm -f "$temp_pattern"
-
-    # Validate result
-    local initial_count final_count
-    initial_count=$(wc -l < "$input")
-    final_count=$(wc -l < "$output")
-
-    log "Whitelist applied: $initial_count -> $final_count domains"
-
-    return 0
+    mv "$temp_output" "$output"
 }
 
 # Function to check intersections between lists
@@ -1251,10 +990,7 @@ check_intersections() {
 
     # If intersections found, remove them from main list
     if [[ -s "$temp_intersect" ]]; then
-        log "Found intersecting domains - moving to special list:"
-        while IFS= read -r domain; do
-            log "Moving domain to special list: $domain"
-        done < "$temp_intersect"
+        log "Intersecting domains moved to special: $(wc -l < "$temp_intersect")"
 
         # Remove intersecting domains from main list (whole-line match:
         # without -x, example.com would also remove myexample.com)
@@ -1284,480 +1020,236 @@ check_intersections() {
     return 0
 }
 
-# Function to load lists from sources
-load_lists() {
-    local sources=$1
-    local output=$2
-    local loaded_count=0
-    local failed_count=0
-
-    : > "$output"
-
-    if [[ ! -f "$sources" ]]; then
-        log "ERROR: Sources file $sources does not exist"
-        return 1
-    fi
-
-    while read -r source || [[ -n "$source" ]]; do
-        # Skip empty lines and comments (handle inline comments too)
-        source="${source%%#*}"  # Remove inline comments
-        source="${source#"${source%%[![:space:]]*}"}"  # Trim leading whitespace
-        source="${source%"${source##*[![:space:]]}"}"  # Trim trailing whitespace
-        [[ -z "$source" ]] && continue
-
-        # Reject URLs with embedded whitespace
-        if [[ "$source" =~ [[:space:]] ]]; then
-            log "WARNING: Skipping source with whitespace: $source"
-            ((failed_count++)) || true
-            continue
-        fi
-
-        # Validate URL scheme - only HTTPS allowed
-        if [[ ! "$source" =~ ^https:// ]]; then
-            log "WARNING: Skipping non-HTTPS source: $source"
-            ((failed_count++)) || true
-            continue
-        fi
-
-        log "Loading from source: $source"
-        local response
-        if response=$(curl --proto '=https' -sSL --max-time 30 --retry 3 --retry-delay 2 \
-            --max-filesize "$MAX_DOWNLOAD_BYTES" "$source" 2>/dev/null); then
-            if [[ -n "$response" ]]; then
-                echo "$response" | tr -s '[:space:]' '\n' >> "$output"
-                ((loaded_count++)) || true
-            else
-                log "WARNING: Empty response from $source"
-                ((failed_count++)) || true
-            fi
-        else
-            log "WARNING: Failed to load $source"
-            ((failed_count++)) || true
-        fi
-    done < "$sources"
-
-    log "Sources loaded: $loaded_count successful, $failed_count failed"
-    
-    if [[ $loaded_count -eq 0 ]]; then
-        log "ERROR: No sources loaded successfully"
-        return 1
-    fi
-    
-    return 0
+# Source downloads are retained for the current run and reused by load_lists.
+declare -gA DOWNLOAD_STATUS=()
+source_urls() {
+    [[ -f "$1" ]] || return 1
+    sed 's/#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//; /^$/d' "$1"
 }
 
-# Function to validate results
-validate_results() {
-    local main_list=$1
-    local special_list=$2
-    local invalid_count=0
-
-    # Check for file existence
-    if [[ ! -f "$main_list" ]]; then
-        log "ERROR: Main list file does not exist: $main_list"
+download_source() {
+    local source=$1 path
+    path="${TMP_DIR}/downloads/$(printf '%s' "$source" | md5sum | cut -d' ' -f1)"
+    if [[ -n "${DOWNLOAD_STATUS[$source]:-}" ]]; then
+        [[ "${DOWNLOAD_STATUS[$source]}" == ok ]]
+        return
+    fi
+    DOWNLOAD_STATUS[$source]=failed
+    [[ "$source" == https://* && ! "$source" =~ [[:space:]] ]] || {
+        log "WARNING: Skipping invalid source URL"
         return 1
-    fi
-
-    if [[ ! -f "$special_list" ]]; then
-        log "ERROR: Special list file does not exist: $special_list"
-        return 1
-    fi
-
-    # Check file size
-    if [[ ! -s "$main_list" ]]; then
-        log "ERROR: Main list file is empty: $main_list"
-        return 1
-    fi
-
-    if [[ ! -s "$special_list" ]]; then
-        log "ERROR: Special list file is empty: $special_list"
-        return 1
-    fi
-
-    # Check content format for main list
-    while read -r line; do
-        if ! validate_domain "$line"; then
-            log "WARNING: Invalid domain in main list: $line"
-            ((invalid_count++)) || true
-            if [[ $invalid_count -gt 10 ]]; then
-                log "ERROR: Too many invalid domains in main list (>10)"
-                return 1
-            fi
-        fi
-    done < "$main_list"
-
-    # Check content format for special list
-    invalid_count=0
-    while read -r line; do
-        if ! validate_domain "$line"; then
-            log "WARNING: Invalid domain in special list: $line"
-            ((invalid_count++)) || true
-            if [[ $invalid_count -gt 10 ]]; then
-                log "ERROR: Too many invalid domains in special list (>10)"
-                return 1
-            fi
-        fi
-    done < "$special_list"
-
-    log "Validation passed: main=$(wc -l < "$main_list") special=$(wc -l < "$special_list") domains"
-    return 0
-}
-
-# Function to save results
-save_results() {
-    local main_list=$1
-    local special_list=$2
-    local timestamp
-    timestamp=$(date +%Y%m%d_%H%M%S)
-
-    log "Starting to save results..."
-
-    # Validate input files
-    for file in "$main_list" "$special_list"; do
-        if ! [[ -f "$file" && -s "$file" ]]; then
-            log "ERROR: Invalid or empty input file: $file"
-            return 1
-        fi
-    done
-
-    # Create temporary files
-    local temp_main="${main_list}.${timestamp}.tmp"
-    local temp_special="${special_list}.${timestamp}.tmp"
-    local backup_main="${main_list}.backup"
-    local backup_special="${special_list}.backup"
-
-    # Create backups of current files
-    for pair in "$main_list:$backup_main" "$special_list:$backup_special"; do
-        IFS=':' read -r src dst <<< "$pair"
-        if [[ -f "$src" ]]; then
-            if ! cp "$src" "$dst"; then
-                log "WARNING: Failed to create backup of $src"
-            else
-                chmod 600 "$dst" 2>/dev/null
-            fi
-        fi
-    done
-
-    # Validate and copy to temporary files
-    for pair in "$main_list:$temp_main" "$special_list:$temp_special"; do
-        IFS=':' read -r src dst <<< "$pair"
-
-        # Count valid domains
-        local valid_count=0
-        while IFS= read -r domain; do
-            if validate_domain "$domain"; then
-                echo "$domain" >> "$dst"
-                ((valid_count++)) || true
-            else
-                log "WARNING: Invalid domain found: $domain"
-            fi
-        done < "$src"
-
-        if [[ $valid_count -eq 0 ]]; then
-            log "ERROR: No valid domains in $src"
-            rm -f "$temp_main" "$temp_special"
-            return 1
-        fi
-    done
-
-    # Set proper permissions
-    for file in "$temp_main" "$temp_special"; do
-        if ! chmod 600 "$file"; then
-            log "WARNING: Failed to set permissions for $file"
-        fi
-    done
-
-    # Atomic moves
-    if ! mv "$temp_main" "$main_list" || ! mv "$temp_special" "$special_list"; then
-        log "ERROR: Failed to update result files"
-        # Restore from backups
-        for pair in "$backup_main:$main_list" "$backup_special:$special_list"; do
-            IFS=':' read -r src dst <<< "$pair"
-            [[ -f "$src" ]] && mv "$src" "$dst"
-        done
-        return 1
-    fi
-
-    # Clean up backups
-    rm -f "$backup_main" "$backup_special"
-
-    # Final validation
-    local main_count special_count
-    main_count=$(wc -l < "$main_list")
-    special_count=$(wc -l < "$special_list")
-
-    log "Results saved successfully:"
-    log "- Main list: $main_count domains"
-    log "- Special list: $special_count domains"
-
-    return 0
-}
-
-# Function to update gists
-update_gists() {
-    [[ "$EXPORT_GISTS" != "true" ]] && return 0
-
-    log "Starting gist update..."
-
-    [[ -z "$GITHUB_TOKEN" ]] && { log "ERROR: GITHUB_TOKEN is not set"; return 1; }
-
-    # Update main list
-    if [[ -n "$GIST_ID_MAIN" && -f "$OUTPUT_FILE" ]]; then
-        log "Updating main list gist..."
-        local payload_file content_file
-        payload_file=$(mktemp "${TMP_DIR}/payload.XXXXXX")
-        content_file=$(mktemp "${TMP_DIR}/content.XXXXXX")
-        if ! jq -Rs '.' "$OUTPUT_FILE" > "$content_file"; then
-            log "ERROR: Failed to encode main list content"
-            rm -f "$content_file" "$payload_file"
-            return 1
-        fi
-        if ! jq -n --arg filename "$(basename "$OUTPUT_FILE")" \
-              --slurpfile content "$content_file" \
-              '{"files": {($filename): {"content": $content[0]}}}' > "$payload_file"; then
-            log "ERROR: Failed to build main list payload"
-            rm -f "$content_file" "$payload_file"
-            return 1
-        fi
-        rm -f "$content_file"
-
-        local response
-        response=$(github_api_request "PATCH" "https://api.github.com/gists/$GIST_ID_MAIN" "$payload_file")
-
-        rm -f "$payload_file"
-        if echo "$response" | jq -e '.id' > /dev/null 2>&1; then
-            log "Main list gist updated successfully"
-        else
-            log "ERROR: Failed to update main list gist"
-            return 1
-        fi
-    fi
-
-    # Update special list
-    if [[ -n "$GIST_ID_SPECIAL" && -f "$OUTPUT_FILESPECIAL" ]]; then
-        log "Updating special list gist..."
-        local payload_file content_file
-        payload_file=$(mktemp "${TMP_DIR}/payload.XXXXXX")
-        content_file=$(mktemp "${TMP_DIR}/content.XXXXXX")
-        if ! jq -Rs '.' "$OUTPUT_FILESPECIAL" > "$content_file"; then
-            log "ERROR: Failed to encode special list content"
-            rm -f "$content_file" "$payload_file"
-            return 1
-        fi
-        if ! jq -n --arg filename "$(basename "$OUTPUT_FILESPECIAL")" \
-              --slurpfile content "$content_file" \
-              '{"files": {($filename): {"content": $content[0]}}}' > "$payload_file"; then
-            log "ERROR: Failed to build special list payload"
-            rm -f "$content_file" "$payload_file"
-            return 1
-        fi
-        rm -f "$content_file"
-
-        local response
-        response=$(github_api_request "PATCH" "https://api.github.com/gists/$GIST_ID_SPECIAL" "$payload_file")
-
-        rm -f "$payload_file"
-        if echo "$response" | jq -e '.id' > /dev/null 2>&1; then
-            log "Special list gist updated successfully"
-        else
-            log "ERROR: Failed to update special list gist"
-            return 1
-        fi
-    fi
-
-    return 0
-}
-
-# Function to check if update is needed
-# Returns: 0 = update needed, 1 = no changes, 2 = check failed
-check_updates_needed() {
-    local state_file="${STATE_DIR}/update_state.dat"
-    local temp_dir="${TMP_DIR}/downloads"
-    local current_md5="${temp_dir}/current_md5"
-    local previous_md5="${temp_dir}/previous_md5"
-    local update_needed=false
-
-    log "Checking for updates..."
-
-    if ! mkdir -p "$temp_dir"; then
-        log "ERROR: Failed to create temporary directory"
-        return 2
-    fi
-
-    if ! chmod 700 "$temp_dir"; then
-        log "WARNING: Failed to set permissions for temporary directory"
-    fi
-
-    # Create files with proper permissions
-    for file in "$current_md5" "$previous_md5"; do
-        if ! touch "$file" 2>/dev/null; then
-            log "ERROR: Cannot create file: ${file}"
-            return 2
-        fi
-        if ! chmod 600 "$file" 2>/dev/null; then
-            log "WARNING: Failed to set permissions for ${file}"
-        fi
-    done
-
-    # Start each run with an empty current_md5: entries below are appended,
-    # and leftovers from a previous run would defeat the MD5 comparison
-    : > "$current_md5"
-
-    download_and_check() {
-        local source=$1
-        local temp_file
-        temp_file="${temp_dir}/$(echo "$source" | md5sum | cut -d' ' -f1)"
-
-        log "Downloading: $source"
-        if ! curl --proto '=https' -sSL --max-time 30 --retry 3 --retry-delay 2 \
-            --max-filesize "$MAX_DOWNLOAD_BYTES" "$source" -o "$temp_file"; then
-            log "WARNING: Failed to download $source"
-            return 1
-        fi
-
-        if ! [[ -s "$temp_file" ]]; then
-            log "WARNING: Downloaded file is empty: $source"
-            return 1
-        fi
-
-        local md5_sum
-        if ! md5_sum=$(md5sum "$temp_file" | cut -d' ' -f1); then
-            log "WARNING: Failed to calculate MD5 for $source"
-            return 1
-        fi
-
-        if ! [[ $md5_sum =~ ^[a-f0-9]{32}$ ]]; then
-            log "WARNING: Invalid MD5 format for $source"
-            return 1
-        fi
-
-        if ! echo "${source} ${md5_sum}" >> "$current_md5"; then
-            log "WARNING: Failed to write MD5 sums for $source"
-            return 1
-        fi
-
-        return 0
     }
-
-    # Process all source files
-    local process_failed=false
-    for source_file in "$SOURCES_FILE" "$SOURCESSPECIAL_FILE" "$WHITELIST_FILE"; do
-        if [[ -f "$source_file" ]]; then
-            while IFS= read -r source || [[ -n "$source" ]]; do
-                source="${source%%#*}"
-                source="${source#"${source%%[![:space:]]*}"}"
-                source="${source%"${source##*[![:space:]]}"}"
-                [[ -z "$source" ]] && continue
-                # Reject URLs with embedded whitespace
-                if [[ "$source" =~ [[:space:]] ]]; then
-                    log "WARNING: Skipping source with whitespace in update check: $source"
-                    continue
-                fi
-                # Validate URL scheme - only HTTPS allowed
-                if [[ ! "$source" =~ ^https:// ]]; then
-                    log "WARNING: Skipping non-HTTPS source in update check: $source"
-                    continue
-                fi
-                if ! download_and_check "$source"; then
-                    process_failed=true
-                    break 2
-                fi
-            done < "$source_file"
-        fi
-    done
-
-    if [[ "$process_failed" == "true" ]]; then
-        log "ERROR: Failed to process one or more sources"
-        find "$temp_dir" -type f ! -name "*md5" -delete 2>/dev/null || :
-        return 2
-    fi
-
-    # Compare current and previous states
-    local changed=false
-    while IFS=' ' read -r source md5; do
-        local prev_md5_val
-        prev_md5_val=$(awk -v url="$source" '$1 == url { print $2 }' "$previous_md5")
-
-        if [[ -z "$prev_md5_val" ]]; then
-            changed=true
-            log "Content changed for source: $source (no previous entry)"
-        else
-            if [[ "$md5" != "$prev_md5_val" ]]; then
-                changed=true
-                log "Content changed for source: $source"
-                log "Previous MD5: $prev_md5_val"
-                log "Current MD5: $md5"
-            fi
-        fi
-    done < "$current_md5"
-
-    # Set update_needed based on changes
-    if [[ "$changed" == "true" ]]; then
-        update_needed=true
-    else
-        update_needed=false
-    fi
-
-    # Force update if older than 24 hours
-    if [[ -f "$state_file" && -s "$state_file" ]]; then
-        local last_update current_time
-        last_update=$(<"$state_file")
-        current_time=$(date +%s)
-
-        if [[ "$last_update" =~ ^[0-9]+$ ]] && (( current_time - last_update > FORCE_UPDATE_SECONDS )); then
-            log "Forced update due to time threshold"
-            update_needed=true
-        fi
-    fi
-
-    # Update MD5 checksums and state file if update is needed
-    if [[ "$update_needed" == "true" ]]; then
-        if ! cp "$current_md5" "$previous_md5"; then
-            log "ERROR: Failed to update MD5 checksums"
-            return 2
-        fi
-
-        if ! date +%s > "$state_file"; then
-            log "WARNING: Failed to save update state"
-        fi
-
-        if ! chmod 600 "$state_file" 2>/dev/null; then
-            log "WARNING: Failed to set permissions for state file"
-        fi
-
-        log "Update state saved"
-    else
-        log "No updates needed based on MD5 comparison"
-    fi
-
-    # Cleanup but preserve MD5 files
-    if ! find "$temp_dir" -type f ! -name "*md5" -delete 2>/dev/null; then
-        log "WARNING: Failed to clean temporary files"
-    fi
-
-    # Return 0 if update is needed, 1 if not
-    if [[ "$update_needed" == "true" ]]; then
-        log "Updates needed"
-        return 0
-    else
-        log "No updates needed"
+    mkdir -p "${TMP_DIR}/downloads" || return 1
+    if ! curl --proto '=https' --proto-redir '=https' -fsSL --connect-timeout 10 --max-time 30 \
+        --retry 3 --retry-delay 2 --max-filesize "$MAX_DOWNLOAD_BYTES" "$source" -o "$path"; then
+        log "WARNING: Failed to download $source"
+        rm -f "$path"
         return 1
     fi
-
+    [[ -s "$path" ]] || { log "WARNING: Empty source: $source"; return 1; }
+    DOWNLOAD_STATUS[$source]=ok
 }
 
+load_lists() {
+    local sources=$1 output=$2 source path configured=0 loaded=0
+    [[ -f "$sources" ]] || return 1
+    : > "$output" || return 1
+    while IFS= read -r source; do
+        ((configured+=1))
+        if download_source "$source"; then
+            path="${TMP_DIR}/downloads/$(printf '%s' "$source" | md5sum | cut -d' ' -f1)"
+            # Strip comments while lines still retain their original boundaries.
+            sed 's/#.*$//' "$path" | tr -s '[:space:]' '\n' | sed '/^$/d' >> "$output" || return 1
+            ((loaded+=1))
+        fi
+    done < <(source_urls "$sources")
+    if [[ "$sources" == "$WHITELIST_FILE" && $configured -eq 0 ]]; then
+        log "Whitelist has no configured sources"
+        return 0
+    fi
+    [[ $loaded -gt 0 ]] || { log "ERROR: No sources loaded successfully: $sources"; return 1; }
+    # A partial whitelist would silently weaken configured policy.
+    if [[ "$sources" == "$WHITELIST_FILE" && $loaded -ne $configured ]]; then
+        log "ERROR: Configured whitelist source unavailable"
+        return 1
+    fi
+}
 
-# Helper function to restore backups
-restore_backups() {
-    log "Restoring backups..."
-    if [[ -f "${OUTPUT_FILE}.bak" ]]; then
-        mv "${OUTPUT_FILE}.bak" "$OUTPUT_FILE"
-        log "Restored main list from backup"
+# Validate once and normalize tolerated invalid rows in the staging files.
+validate_results() {
+    local main_list=$1 special_list=$2 file line invalid_count clean
+    for file in "$main_list" "$special_list"; do
+        [[ -s "$file" ]] || { log "ERROR: Missing or empty result: $file"; return 1; }
+        clean=$(mktemp "${TMP_DIR}/validated.XXXXXX") || return 1
+        invalid_count=0
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if validate_domain "$line"; then
+                printf '%s\n' "$line" >> "$clean" || { rm -f "$clean"; return 1; }
+            else
+                log "WARNING: Invalid domain excluded: $line"
+                ((invalid_count+=1))
+                if (( invalid_count > 10 )); then rm -f "$clean"; return 1; fi
+            fi
+        done < "$file"
+        # Publication separately rejects lists with no remaining valid rows.
+        mv "$clean" "$file" || { rm -f "$clean"; return 1; }
+    done
+    log "Results validated"
+}
+
+PUBLICATION_IN_PROGRESS=false
+PUBLICATION_HAD_MAIN=false
+PUBLICATION_HAD_SPECIAL=false
+PUBLICATION_STAGED_MAIN=''
+PUBLICATION_STAGED_SPECIAL=''
+
+rollback_publication() {
+    [[ "$PUBLICATION_IN_PROGRESS" == true ]] || return 0
+    local failed=0
+    if [[ "$PUBLICATION_HAD_MAIN" == true ]]; then
+        mv "${OUTPUT_FILE}.bak" "$OUTPUT_FILE" || failed=1
+    else
+        rm -f "$OUTPUT_FILE" || failed=1
     fi
-    if [[ -f "${OUTPUT_FILESPECIAL}.bak" ]]; then
-        mv "${OUTPUT_FILESPECIAL}.bak" "$OUTPUT_FILESPECIAL"
-        log "Restored special list from backup"
+    if [[ "$PUBLICATION_HAD_SPECIAL" == true ]]; then
+        mv "${OUTPUT_FILESPECIAL}.bak" "$OUTPUT_FILESPECIAL" || failed=1
+    else
+        rm -f "$OUTPUT_FILESPECIAL" || failed=1
     fi
+    rm -f "$PUBLICATION_STAGED_MAIN" "$PUBLICATION_STAGED_SPECIAL"
+    PUBLICATION_IN_PROGRESS=false
+    return "$failed"
+}
+
+# Publish only validated staging files, retaining the actual previous outputs.
+save_results() {
+    local main_list=$1 special_list=$2 staged_main staged_special
+    [[ -s "$main_list" && -s "$special_list" ]] || return 1
+    staged_main=$(mktemp "${WORK_DIR}/.main.XXXXXX") || return 1
+    staged_special=$(mktemp "${WORK_DIR}/.special.XXXXXX") || { rm -f "$staged_main"; return 1; }
+    if ! cp "$main_list" "$staged_main" || ! cp "$special_list" "$staged_special" || \
+       ! chmod 600 "$staged_main" "$staged_special"; then
+        rm -f "$staged_main" "$staged_special"
+        return 1
+    fi
+    local file had_main=false had_special=false
+    [[ ! -f "$OUTPUT_FILE" ]] || had_main=true
+    [[ ! -f "$OUTPUT_FILESPECIAL" ]] || had_special=true
+    for file in "$OUTPUT_FILE" "$OUTPUT_FILESPECIAL"; do
+        if [[ -f "$file" ]]; then
+            if ! cp "$file" "${file}.bak"; then
+                rm -f "$staged_main" "$staged_special"
+                return 1
+            fi
+        fi
+    done
+    PUBLICATION_HAD_MAIN=$had_main
+    PUBLICATION_HAD_SPECIAL=$had_special
+    PUBLICATION_STAGED_MAIN=$staged_main
+    PUBLICATION_STAGED_SPECIAL=$staged_special
+    PUBLICATION_IN_PROGRESS=true
+    if ! mv "$staged_main" "$OUTPUT_FILE" || ! mv "$staged_special" "$OUTPUT_FILESPECIAL"; then
+        rollback_publication || log "ERROR: Failed to restore previous outputs"
+        return 1
+    fi
+    PUBLICATION_IN_PROGRESS=false
+    rm -f "${OUTPUT_FILE}.bak" "${OUTPUT_FILESPECIAL}.bak"
+    log "Results published successfully"
+}
+
+# Publish the staged lists before exposing local outputs or committing state.
+update_gists() {
+    [[ "$EXPORT_GISTS" == true ]] || return 0
+    [[ -n "$GITHUB_TOKEN" && -n "$GIST_ID_MAIN" && -n "$GIST_ID_SPECIAL" ]] || {
+        log "ERROR: Gist export requires a token and both gist IDs"
+        return 1
+    }
+    local main_list=${1:-$OUTPUT_FILE} special_list=${2:-$OUTPUT_FILESPECIAL}
+    local file id filename payload response
+    for file in "$main_list" "$special_list"; do
+        if [[ "$file" == "$main_list" ]]; then id=$GIST_ID_MAIN; filename=$(basename "$OUTPUT_FILE")
+        else id=$GIST_ID_SPECIAL; filename=$(basename "$OUTPUT_FILESPECIAL"); fi
+        payload=$(mktemp "${TMP_DIR}/payload.XXXXXX") || return 1
+        if ! jq -n --arg filename "$filename" --rawfile content "$file" \
+            '{files: {($filename): {content: $content}}}' > "$payload"; then
+            rm -f "$payload"
+            return 1
+        fi
+        if ! response=$(github_api_request PATCH "https://api.github.com/gists/$id" "$payload"); then
+            rm -f "$payload"
+            log "ERROR: Gist request failed"
+            return 1
+        fi
+        rm -f "$payload"
+        if ! jq -e --arg id "$id" '.id == $id' <<< "$response" >/dev/null; then
+            log "ERROR: Unexpected Gist response"
+            return 1
+        fi
+    done
+}
+
+# Returns 0 for pending changes, 1 for unchanged, 2 for unavailable inputs.
+check_updates_needed() {
+    local current="${TMP_DIR}/downloads/current_md5"
+    local previous="${TMP_DIR}/downloads/previous_md5"
+    local source_file source path hash configured loaded role last_update
+    mkdir -p "${TMP_DIR}/downloads" || return 2
+    DOWNLOAD_STATUS=()
+    : > "$current" || return 2
+    for source_file in "$SOURCES_FILE" "$SOURCESSPECIAL_FILE" "$WHITELIST_FILE"; do
+        [[ -f "$source_file" ]] || { [[ "$source_file" == "$WHITELIST_FILE" ]] && continue; return 2; }
+        configured=0; loaded=0; role=$(basename "$source_file")
+        while IFS= read -r source; do
+            ((configured+=1))
+            if download_source "$source"; then
+                path="${TMP_DIR}/downloads/$(printf '%s' "$source" | md5sum | cut -d' ' -f1)"
+                hash=$(md5sum "$path" | cut -d' ' -f1) || return 2
+                printf '%s %s %s\n' "$role" "$source" "$hash" >> "$current" || return 2
+                ((loaded+=1))
+            else
+                # Failed sources remain part of the manifest and are retried each run.
+                printf '%s %s unavailable\n' "$role" "$source" >> "$current" || return 2
+            fi
+        done < <(source_urls "$source_file")
+        if [[ "$source_file" == "$WHITELIST_FILE" ]]; then
+            [[ $configured -eq $loaded ]] || return 2
+        elif [[ $loaded -eq 0 ]]; then
+            log "ERROR: No usable sources: $source_file"
+            return 2
+        fi
+    done
+    LC_ALL=C sort -u "$current" -o "$current" || return 2
+    [[ -s "$STATE_DIR/update_state.dat" && -s "$OUTPUT_FILE" && -s "$OUTPUT_FILESPECIAL" ]] || return 0
+    [[ -f "$previous" ]] && cmp -s "$current" "$previous" || return 0
+    last_update=$(<"$STATE_DIR/update_state.dat")
+    [[ "$last_update" =~ ^[1-9][0-9]{0,10}$ ]] || return 0
+    (( $(date +%s) - last_update <= FORCE_UPDATE_SECONDS )) || return 0
+    return 1
+}
+
+commit_update_state() {
+    local pending="${STATE_DIR}/update_state.pending"
+    local previous="${TMP_DIR}/downloads/previous_md5"
+    local backup="${TMP_DIR}/previous_state.timestamp"
+    local had_state=false
+    if [[ -f "${STATE_DIR}/update_state.dat" ]]; then
+        cp "${STATE_DIR}/update_state.dat" "$backup" || return 1
+        had_state=true
+    fi
+    date +%s > "$pending" && chmod 600 "$pending" || return 1
+    cp "${TMP_DIR}/downloads/current_md5" "${previous}.pending" || return 1
+    chmod 600 "${previous}.pending" || return 1
+    # Timestamp first: a failed manifest move still compares against old inputs.
+    mv "$pending" "${STATE_DIR}/update_state.dat" || return 1
+    if ! mv "${previous}.pending" "$previous"; then
+        if [[ "$had_state" == true ]]; then
+            mv "$backup" "${STATE_DIR}/update_state.dat" || return 1
+        else
+            rm -f "${STATE_DIR}/update_state.dat"
+        fi
+        return 1
+    fi
+    rm -f "$backup"
 }
 
 # Function to process a single domain list
@@ -1798,218 +1290,80 @@ process_domain_list() {
 
 # Main function
 main() {
+    parse_arguments "$@"
+    # Directory creation precedes locking; logging and state mutation follow it.
+    mkdir -p "$STATE_DIR" "$TMP_DIR" || return 1
+    chmod 700 "$STATE_DIR" "$TMP_DIR" || return 1
+    acquire_lock || return 1
     log "Script started..."
-
-    # Check required files
-    if ! check_required_files; then
-        log "ERROR: Required files check failed"
-        return 1
-    fi
-
-    # Initialize directories
-    if ! init_directories; then
-        log "ERROR: Failed to initialize directories"
-        return 1
-    fi
-
-    # Check dependencies (error() exits the script on failure)
-    check_dependencies
-
-    # Acquire lock
-    if ! acquire_lock; then
-        log "ERROR: Failed to acquire lock"
-        return 1
-    fi
-
-    # Load public suffix list
-    if ! load_public_suffix_list; then
-        log "ERROR: Failed to load public suffix list"
+    if ! check_required_files || ! init_directories || ! check_dependencies || \
+       ! cleanup || ! load_public_suffix_list; then
         release_lock
         return 1
     fi
-
-    log "Starting main processing..."
-
-    # Check if update is needed (0 = update, 1 = no changes, 2 = check failed)
     local update_rc=0
     check_updates_needed || update_rc=$?
-    if [[ $update_rc -eq 2 ]]; then
-        log "ERROR: Update check failed"
+    if [[ $update_rc -ne 0 ]]; then
         release_lock
-        return 1
-    elif [[ $update_rc -ne 0 ]]; then
-        log "No updates needed, exiting gracefully"
-        cleanup
-        cleanup_invalid_cache
-        log_cache_stats
-        release_lock
-        return 0
+        [[ $update_rc -eq 1 ]]
+        return
     fi
-
-    log "Updates needed, proceeding with processing..."
-
-    # Clean temporary files
-    if ! cleanup; then
-        log "ERROR: Cleanup failed"
-        release_lock
-        return 1
-    fi
-
-    # Initialize raw file paths
-    local main_raw="${TMP_DIR}/main_raw.txt"
-    local special_raw="${TMP_DIR}/special_raw.txt"
+    local main_raw="${TMP_DIR}/main_raw.txt" special_raw="${TMP_DIR}/special_raw.txt"
     local whitelist_raw="${TMP_DIR}/whitelist_raw.txt"
-
-    log "Loading lists..."
-
-    # Load main and special lists
-    if ! load_lists "$SOURCES_FILE" "$main_raw"; then
-        log "ERROR: Failed to load main list"
+    if ! load_lists "$SOURCES_FILE" "$main_raw" || ! load_lists "$SOURCESSPECIAL_FILE" "$special_raw"; then
         release_lock
         return 1
     fi
-
-    if ! load_lists "$SOURCESSPECIAL_FILE" "$special_raw"; then
-        log "ERROR: Failed to load special list"
+    if [[ -f "$WHITELIST_FILE" ]] && ! load_lists "$WHITELIST_FILE" "$whitelist_raw"; then
         release_lock
         return 1
     fi
-
-    # Load whitelist if exists
-    if [[ -f "$WHITELIST_FILE" ]]; then
-        if ! load_lists "$WHITELIST_FILE" "$whitelist_raw"; then
-            log "ERROR: Failed to load whitelist"
+    if ! process_domain_list main "$main_raw" main || ! process_domain_list special "$special_raw" special; then
+        release_lock
+        return 1
+    fi
+    if [[ -s "$whitelist_raw" ]]; then
+        # Empty parsed whitelist is permitted when downloads succeeded.
+        local whitelist_rc=0
+        extract_domains "$whitelist_raw" "${TMP_DIR}/whitelist_extracted.txt" || whitelist_rc=$?
+        if [[ $whitelist_rc -ne 0 && $whitelist_rc -ne 2 ]]; then
+            log "ERROR: Failed to extract whitelist"
             release_lock
             return 1
         fi
-    fi
-
-    # Create backups of current files
-    if [[ -f "$OUTPUT_FILE" ]]; then
-        if ! cp "$OUTPUT_FILE" "${OUTPUT_FILE}.bak"; then
-            log "ERROR: Failed to create backup of main list"
-            release_lock
-            return 1
-        fi
-        log "Backup of main list created"
-    fi
-
-    if [[ -f "$OUTPUT_FILESPECIAL" ]]; then
-        if ! cp "$OUTPUT_FILESPECIAL" "${OUTPUT_FILESPECIAL}.bak"; then
-            log "ERROR: Failed to create backup of special list"
-            release_lock
-            return 1
-        fi
-        log "Backup of special list created"
-    fi
-
-    # Process main and special lists using the unified function
-    if ! process_domain_list "main" "$main_raw" "main"; then
-        log "ERROR: Failed to process main list"
-        restore_backups
-        release_lock
-        return 1
-    fi
-
-    if ! process_domain_list "special" "$special_raw" "special"; then
-        log "ERROR: Failed to process special list"
-        restore_backups
-        release_lock
-        return 1
-    fi
-
-    # Apply whitelist if exists
-    if [[ -f "$whitelist_raw" ]]; then
-        log "Applying whitelist..."
-        if ! extract_domains "$whitelist_raw" "${TMP_DIR}/whitelist_extracted.txt" || \
-           ! initial_filter "${TMP_DIR}/whitelist_extracted.txt" "${TMP_DIR}/whitelist.txt" || \
-           ! apply_whitelist "${TMP_DIR}/main_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/main_filtered_clean.txt" || \
-           ! apply_whitelist "${TMP_DIR}/special_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/special_filtered_clean.txt"; then
-            log "ERROR: Failed to apply whitelist"
-            restore_backups
-            release_lock
-            return 1
-        fi
-
-        if ! mv "${TMP_DIR}/main_filtered_clean.txt" "${TMP_DIR}/main_filtered.txt" || \
-           ! mv "${TMP_DIR}/special_filtered_clean.txt" "${TMP_DIR}/special_filtered.txt"; then
-            log "ERROR: Failed to update filtered files"
-            restore_backups
-            release_lock
-            return 1
+        if [[ -s "${TMP_DIR}/whitelist_extracted.txt" ]]; then
+            if ! initial_filter "${TMP_DIR}/whitelist_extracted.txt" "${TMP_DIR}/whitelist.txt" || \
+               ! apply_whitelist "${TMP_DIR}/main_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/main_filtered_clean.txt" || \
+               ! apply_whitelist "${TMP_DIR}/special_filtered.txt" "${TMP_DIR}/whitelist.txt" "${TMP_DIR}/special_filtered_clean.txt" || \
+               ! mv "${TMP_DIR}/main_filtered_clean.txt" "${TMP_DIR}/main_filtered.txt" || \
+               ! mv "${TMP_DIR}/special_filtered_clean.txt" "${TMP_DIR}/special_filtered.txt"; then
+                release_lock
+                return 1
+            fi
         fi
     fi
-
-    # Check for intersections and move duplicates to special list
-    if ! check_intersections "${TMP_DIR}/main_filtered.txt" "${TMP_DIR}/special_filtered.txt"; then
-        log "ERROR: Failed to process list intersections"
-        restore_backups
+    local staged_main="${TMP_DIR}/main_dns.txt" staged_special="${TMP_DIR}/special_dns.txt"
+    if ! check_intersections "${TMP_DIR}/main_filtered.txt" "${TMP_DIR}/special_filtered.txt" || \
+       ! check_domains_parallel "${TMP_DIR}/main_filtered.txt" "$staged_main" || \
+       ! check_domains_parallel "${TMP_DIR}/special_filtered.txt" "$staged_special" || \
+       ! validate_results "$staged_main" "$staged_special" || \
+       [[ ! -s "$staged_main" || ! -s "$staged_special" ]] || \
+       ! update_gists "$staged_main" "$staged_special" || \
+       ! save_results "$staged_main" "$staged_special" || ! commit_update_state; then
+        log "ERROR: Processing failed; update state remains pending"
         release_lock
         return 1
     fi
-
-    # Perform DNS checks
-    log "Performing DNS checks..."
-    if ! check_domains_parallel "${TMP_DIR}/main_filtered.txt" "$OUTPUT_FILE" || \
-       ! check_domains_parallel "${TMP_DIR}/special_filtered.txt" "$OUTPUT_FILESPECIAL"; then
-        log "ERROR: DNS checks failed"
-        restore_backups
-        release_lock
-        return 1
-    fi
-
-    # Validate and save results
-    if ! validate_results "$OUTPUT_FILE" "$OUTPUT_FILESPECIAL"; then
-        log "ERROR: Results failed validation"
-        restore_backups
-        release_lock
-        return 1
-    fi
-
-    if ! save_results "$OUTPUT_FILE" "$OUTPUT_FILESPECIAL"; then
-        log "ERROR: Failed to save results"
-        restore_backups
-        release_lock
-        return 1
-    fi
-
-    # Update gists if results exist and are valid
-    if [[ -s "$OUTPUT_FILE" ]] && [[ -s "$OUTPUT_FILESPECIAL" ]]; then
-        if ! update_gists; then
-            log "ERROR: Failed to update gists"
-            release_lock
-            return 1
-        fi
-    else
-        log "ERROR: Empty results, skipping gist update"
-        restore_backups
-        release_lock
-        return 1
-    fi
-
-    # Cleanup
-    if ! cleanup; then
-        log "WARNING: Cleanup failed"
-    fi
-
-    # Remove backups
-    rm -f "${OUTPUT_FILE}.bak" "${OUTPUT_FILESPECIAL}.bak"
-
+    cleanup || true
     log "Processing completed successfully"
-    log "Main list: $(wc -l < "$OUTPUT_FILE") domains"
-    log "Special list: $(wc -l < "$OUTPUT_FILESPECIAL") domains"
-
     release_lock
-    return 0
 }
 
-# Main execution
-parse_arguments "$@"
-
-# Note: `set -e` is suspended inside an if-condition (bash semantics), so main()
-# relies on its explicit per-step error checks, not on errexit.
-if ! main "$@"; then
-    error "Script terminated with error"
+# Sourcing provides functions without changing shell options or traps.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    set -e
+    trap 'trap_cleanup $?' EXIT
+    trap 'trap_cleanup 130' INT
+    trap 'trap_cleanup 143' TERM
+    if main "$@"; then exit 0; else exit 1; fi
 fi
-
-exit 0

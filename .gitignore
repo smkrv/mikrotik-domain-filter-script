@@ -50,6 +50,7 @@ ehthumbs.db
 
 # Internal docs (plans, audit notes, session handoffs)
 docs/plans/
+/code-review.md
 handoff.*.md
 
 # Archives

@@ -1,6 +1,6 @@
 <div align="center">  
 
-[![GitHub last commit](https://img.shields.io/github/last-commit/smkrv/mikrotik-domain-filter-script.svg?style=flat-square)](https://github.com/smkrv/mikrotik-domain-filter-script/commits) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT) [![RouterOS](https://img.shields.io/badge/RouterOS-7.20.6-blue?style=flat-square)](https://help.mikrotik.com/docs/display/ROS/RouterOS) [![RouterOS](https://img.shields.io/badge/RouterOS-6.17-blue?style=flat-square)](https://help.mikrotik.com/docs/display/ROS/RouterOS) ![Status](https://img.shields.io/badge/Status-Production-green?style=flat-square) [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=flat-square&logo=Cloudflare&logoColor=white)](https://www.cloudflare.com/) [![Debian](https://img.shields.io/badge/Debian-12%20Bookworm-red?style=flat-square&logo=debian&logoColor=white)](https://www.debian.org/releases/bookworm/) [![Ubuntu LTS](https://img.shields.io/badge/Ubuntu%20LTS-22.04-orange?style=flat-square&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/) [![ShellCheck](https://img.shields.io/badge/ShellCheck-passing-success?style=flat-square&logo=gnu-bash&logoColor=white)](https://github.com/smkrv/mikrotik-domain-filter-script/actions/workflows/shellcheck.yml) ![English](https://img.shields.io/badge/en-English-blue?style=flat-square)
+[![GitHub last commit](https://img.shields.io/github/last-commit/smkrv/mikrotik-domain-filter-script.svg?style=flat-square)](https://github.com/smkrv/mikrotik-domain-filter-script/commits) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT) [![RouterOS](https://img.shields.io/badge/RouterOS-7.20.6-blue?style=flat-square)](https://help.mikrotik.com/docs/display/ROS/RouterOS) ![Status](https://img.shields.io/badge/Status-Production-green?style=flat-square) [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=flat-square&logo=Cloudflare&logoColor=white)](https://www.cloudflare.com/) [![Debian](https://img.shields.io/badge/Debian-12%20Bookworm-red?style=flat-square&logo=debian&logoColor=white)](https://www.debian.org/releases/bookworm/) [![Ubuntu LTS](https://img.shields.io/badge/Ubuntu%20LTS-22.04-orange?style=flat-square&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/) [![ShellCheck](https://img.shields.io/badge/ShellCheck-passing-success?style=flat-square&logo=gnu-bash&logoColor=white)](https://github.com/smkrv/mikrotik-domain-filter-script/actions/workflows/shellcheck.yml) ![English](https://img.shields.io/badge/en-English-blue?style=flat-square)
 
 
   <img src="/docs/images/logo@2x.png" alt="Mikrotik Domain Filter Script" style="width: 70%; max-width: 960px; max-height: 480px; aspect-ratio: 16/9; object-fit: contain;"/>
@@ -81,7 +81,7 @@ Typical uses on the RouterOS side:
 ### Initialization and Setup
 
 - **Path Settings**: The script defines paths for working directories, source files, output files, and temporary files.
-- **Logging**: Events and errors are recorded in `script.log`; processing statistics are tracked per stage and logged.
+- **Logging**: Events append to `script.log` after locking. `--help`, `--version` and a competing process leave the active log unchanged. Use logrotate to bound log growth.
 - **Lock Mechanism**: A file lock (`flock`) ensures that only one instance of the script runs at a time.
 - **Directory Initialization**: Required directories are checked and created if they don't exist.
 - **Dependency Check**: The script verifies the presence of required system tools: `curl`, `jq`, `awk`, `grep`, `sort`, `flock`, `find`, `md5sum`, and `comm`.
@@ -94,7 +94,7 @@ Typical uses on the RouterOS side:
 ### Public Suffix List
 
 - **Loading Public Suffix List**: The script downloads and updates the Public Suffix List if it's outdated. This list is used to determine the type of domains (second-level, regional, etc.).
-- The script uses the Mozilla Public Suffix List[^¹](https://publicsuffix.org/) - a standardized database of domain suffixes that identifies the registrable part of a domain.
+- The script uses literal two-label suffixes from the [Public Suffix List](https://publicsuffix.org/) for regional classification. It does not implement the full PSL wildcard and exception algorithm.
 
 ### Domain Filtering and Classification
 
@@ -104,9 +104,9 @@ Typical uses on the RouterOS side:
 
 ### DNS Checks  
 
-- **Domain Validation**: Each domain that survived filtering, whitelisting, and intersection checks is queried for an A record; only resolving domains reach the output files.
-- **Parallel Processing**: DNS checks run concurrently in background subshells (5 workers by default). Results are stored in per-domain temporary files and aggregated; verdicts are cached.
-- **DNS Resolution Method**: Verification uses Cloudflare's DNS-over-HTTPS (DoH) service[^¹](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/): queries travel over an encrypted channel and return JSON that the script parses with `jq`.
+- **Domain Validation**: Each remaining domain is queried via Cloudflare DoH. `NOERROR` keeps the domain, including names without an A record that are used as suffixes. `NXDOMAIN` excludes it. Transport failures, HTTP errors and other DNS errors abort the update without caching an invalid verdict.
+- **Parallel Processing**: DNS checks use up to 5 workers by default. A free worker takes the next domain. Positive results are cached for 90 days; `NXDOMAIN` results expire after 1 day. Configure these separately with `CACHE_TTL_DAYS` and `CACHE_INVALID_TTL_DAYS`.
+- **DNS Resolution Method**: Verification uses Cloudflare's DNS-over-HTTPS (DoH) service(https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/): queries travel over an encrypted channel and return JSON that the script parses with `jq`.
 
 **Endpoint**: `https://cloudflare-dns.com/dns-query`  
 
@@ -114,26 +114,26 @@ For detailed information about the API requests and response format, please refe
 
 ### Result Validation and Saving
 
-- **Result Validation**: Every line of the final lists is checked against the domain format; empty lists or lists with more than 10 invalid entries are rejected.
-- **Saving Results**: The validated domain lists are saved to output files. Backups are created before overwriting existing files.
+- **Result Validation**: Each staged list is checked once. Up to 10 invalid rows are removed with warnings; more than 10 invalid rows or no remaining valid domains stops publication.
+- **Saving Results**: DNS results stay in temporary files until both lists pass validation. Each output is replaced by a rename, with backups retained for rollback. The two output files are replaced sequentially; readers needing a consistent pair must coordinate with the script lock.
 - **Gist Update**: If the results are valid, the script updates GitHub Gists with the new domain lists.
 
 ### Update Checks and Backups
 
-- **Update Needed Check**: The script checks if the source files have changed using MD5 checksums. If no changes are detected, the script exits early to save resources.
-- **Backup Restoration**: If any step fails, the script restores backups of the output files to maintain the previous state.
+- **Update Needed Check**: The script downloads each source once per run and compares the complete checksum manifest, including source removals. Failed sources are reported; remaining sources can still be processed. Successful checksums and the timestamp are saved after output publication and any configured Gist updates.
+- **Retry and Recovery**: Failed processing leaves the previous success state unchanged, so the next run retries. A configured whitelist that cannot be downloaded stops publication; an absent or empty whitelist configuration, or a downloaded comment-only list, is allowed. Empty HTTP responses are treated as failed sources. Two separate Gists cannot be updated as a single transaction: if the second update fails, the next run retries both.
 
 ### Pipeline Summary
 
-1. **Initialization**: Check required files, create directories, verify dependencies, acquire the lock.
+1. **Initialization**: Create the lock directory, acquire the lock, then check files and dependencies.
 2. **Public Suffix List**: Load or refresh the Public Suffix List.
 3. **Update Check**: Compare MD5 checksums of the sources; exit early if nothing changed.
-4. **Loading**: Download the main, special, and whitelist lists.
+4. **Loading**: Read the downloaded main, special, and whitelist snapshots.
 5. **Filtering and Classification**: Extract domains, drop invalid entries, classify into second-level, regional, and other.
 6. **Whitelist and Intersections**: Remove whitelisted domains, then move domains present in both lists to the special list.
 7. **DNS Checks**: Validate the remaining domains via DNS in parallel.
-8. **Validation and Saving**: Validate the final lists, save them with backups, update GitHub Gists.
-9. **Cleanup**: Remove temporary files; restore previous output if a step failed.
+8. **Validation and Saving**: Validate staged lists, update configured GitHub Gists, publish local outputs, then record the successful update state.
+9. **Cleanup**: Remove temporary files and release the lock after workers exit.
 
 ### File Descriptions
 
@@ -208,7 +208,7 @@ https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/domains/
 - **`SOURCESSPECIAL_FILE`**: Contains URLs for downloading the special domain lists.
 - **`WHITELIST_FILE`**: Contains URLs for downloading domains that should be excluded from both the main and special lists.
 
-**Each file should have one URL or domain per line, with no additional spaces or characters. Inline comments can be added after the URL using `#`, and comments can also be placed before or after the line.**
+Source configuration files accept one HTTPS URL per line. Downloaded lists contain domains or supported Clash rules. Blank lines and `#` comments are ignored.
 
 ### Detailed Description of Domain Processing in Downloaded Lists
 
@@ -253,7 +253,7 @@ youtube.co.uk
 
 #### 2. Domain Classification
 
-Domains are classified into three categories using the Public Suffix List: second-level, regional, and other.
+Domains are classified into three categories using the Public Suffix List: second-level, regional, and other. Classification preserves every label in a source name, including domains with five or more levels. ASCII punycode TLDs are accepted; each label is limited to 63 characters.
 
 **Second-level domains:**
 ```
@@ -318,11 +318,11 @@ workplace.co.jp
 
 #### 5. DNS Validation
 
-Each remaining domain is queried for an A record via DNS-over-HTTPS; only resolving domains are kept. DNS runs last, after all filtering, so no queries are wasted on domains that would be removed anyway.
+Each remaining domain is queried via DNS-over-HTTPS. `NOERROR` keeps it even without an A answer; `NXDOMAIN` removes it. A transient DNS or HTTP failure stops publication and leaves the previous lists available. DNS runs after filtering so excluded domains do not generate queries.
 
 #### Example Final Output
 
-Assuming every domain above resolves:
+Assuming every domain above returns `NOERROR`:
 
 **Main List:**
 ```
@@ -367,41 +367,20 @@ Gist updates go directly through the GitHub API (`curl` + `jq`, both already req
 
 ### Project Structure
 
-```
+```text
 mikrotik-domain-filter-script/
-├── .github/
-│   └── workflows/
-│       └── shellcheck.yml          # CI/CD: ShellCheck, syntax, Makefile, bats tests
-├── bin/
-│   └── mikrotik-domain-filter      # Main domain filtering script
-├── config/
-│   ├── sources.txt.example         # Example: main domain list URLs
-│   ├── sources_special.txt.example # Example: special domain list URLs
-│   └── sources_whitelist.txt.example # Example: whitelist URLs
-├── docs/
-│   ├── images/
-│   │   └── logo@2x.png
-│   └── REQUIREMENTS.md             # System requirements documentation
-├── routeros/
-│   └── dns-static-updater.rsc      # MikroTik RouterOS script
-├── tests/
-│   ├── test_helpers.bash           # Bats test helper functions
-│   ├── test_validate_domain.bats   # Domain validation tests
-│   ├── test_extract_domains.bats   # Domain extraction tests
-│   ├── test_initial_filter.bats    # Initial filtering tests
-│   ├── test_process_domains.bats   # Domain classification tests
-│   ├── test_apply_whitelist.bats   # Whitelist application tests
-│   ├── test_check_intersections.bats        # List intersection tests
-│   ├── test_prepare_domains_for_dns_check.bats # DNS input preparation tests
-│   └── test_validate_results.bats  # Final list validation tests
-├── .editorconfig                   # Editor configuration
-├── .gitignore                      # Git ignore rules
-├── CHANGELOG.md                    # Version changelog
-├── CODE_OF_CONDUCT.md
-├── LICENSE                         # MIT License
-├── Makefile                        # Build and installation commands
-├── VERSION                         # Semantic version file
-└── README.md
+  .github/workflows/shellcheck.yml  # CI checks for main, PRs and release tags
+  bin/mikrotik-domain-filter        # Linux entrypoint
+  config/*.example                 # Source URL configuration templates
+  docs/REQUIREMENTS.md              # Dependencies and environment settings
+  docs/images/                     # README assets
+  routeros/dns-static-updater.rsc   # RouterOS FWD list updater
+  tests/test_helpers.bash           # Source-safe Bats helper
+  tests/test_*.bats                 # Unit, lifecycle, CLI and install regressions
+  Makefile                         # Local checks, installation and release tag
+  VERSION                          # Semantic version
+  CHANGELOG.md                     # Release history
+  README.md
 ```
 
 ### Installation and Setup
@@ -431,7 +410,10 @@ make run       # Run the script
 ```bash
 sudo make install
 # Script installed to /usr/local/bin/mikrotik-domain-filter
+# Default working directory: /etc/mikrotik-domain-filter
 ```
+
+The installed script embeds the release version and uses `SYSCONFDIR` as its default working directory, including under cron. Set `WORK_DIR` explicitly to use another directory. Follow the configuration-copy instructions printed by `make install`; `make setup` preserves existing files in `work/`.
 
 **Option 3: Manual Setup**
 ```bash
@@ -490,129 +472,18 @@ bin/mikrotik-domain-filter --version
 
 ### Script Workflow Diagram
 
-```markdown
-# Main Process Flow
+```text
+Parse arguments -> acquire lock -> check files and dependencies
+  -> refresh PSL -> download source snapshots -> compare complete manifest
+  -> extract and classify -> apply whitelist -> remove intersections
+  -> bounded DNS workers -> validate staged lists
+  -> update configured Gists -> publish local files -> commit success state
+  -> cleanup -> release lock
 
-[START]
-   │
-   ▼
-[Initialization]
-   │
-   ├── Check required files
-   ├── Initialize directories
-   ├── Check dependencies
-   ├── Acquire lock
-   └── Load Public Suffix List
-   │
-   ▼
-[Update Check]
-   │
-   ├── Calculate MD5 of source files
-   ├── Compare with previous MD5
-   └── Exit if no changes
-   │
-   ▼
-[Load Domain Lists]
-   │
-   ├── Download from sources.txt
-   ├── Download from sources_special.txt
-   └── Download from sources_whitelist.txt (if exists)
-   │
-   ▼
-[Initial Processing]
-   │
-   ├── Remove invalid domains
-   ├── Convert to lowercase
-   ├── Remove duplicates
-   └── Basic format validation
-   │
-   ▼
-[Domain Classification]
-   │
-   ├── Second-level domains
-   ├── Regional domains
-   └── Other domains
-   │
-   ▼
-[Whitelist Application]
-   │
-   ├── Load whitelist
-   ├── Filter main list
-   └── Filter special list
-   │
-   ▼
-[List Intersection Check]
-   │
-   ├── Compare main and special lists
-   └── Move duplicates to special list
-   │
-   ▼
-[DNS Validation]
-   │
-   ├── Parallel DNS checks
-   ├── Cache results
-   └── Retry failed checks
-   │
-   ▼
-[Result Validation]
-   │
-   ├── Format check
-   └── Size check
-   │
-   ▼
-[Save Results]
-   │
-   ├── Create backups
-   ├── Save main list
-   └── Save special list
-   │
-   ▼
-[Update Gists]
-   │
-   ├── Update main list gist
-   └── Update special list gist
-   │
-   ▼
-[Cleanup]
-   │
-   ├── Remove temporary files
-   ├── Clear old cache
-   └── Release lock
-   │
-   ▼
-[END]
-
-# Error Handling Flow
-
-[Error Detected]
-   │
-   ▼
-[Log Error]
-   │
-   ▼
-[Restore Backups]
-   │
-   ▼
-[Cleanup]
-   │
-   ▼
-[Release Lock]
-   │
-   ▼
-[Exit with Error]
-
-# Parallel Processing
-
-[DNS Checks]
-   │
-   ├── Worker 1 ──> Process domains
-   ├── Worker 2 ──> Process domains
-   ├── Worker 3 ──> Process domains
-   ├── Worker 4 ──> Process domains
-   └── Worker 5 ──> Process domains
-   │
-   ▼
-[Aggregate Results]
+Unchanged manifest within 24 hours -> release lock -> exit successfully
+Processing failure -> preserve success state -> release lock -> exit nonzero
+Local publication failure -> restore previous files -> exit nonzero
+SIGINT/SIGTERM -> stop worker descendants -> cleanup -> release lock
 ```
 
 ### Benchmarking
@@ -624,7 +495,7 @@ bin/mikrotik-domain-filter --version
 ### MikroTik Router Configuration
 
 #### System Requirements
-- RouterOS version 6.17 or higher (tested on 6.17 and 7.20.6)
+- RouterOS 7.20.6 or later with DNS static `type=FWD`, `match-subdomain` and `address-list` support. RouterOS 6 is not supported by this updater.
 - Sufficient storage space for DNS list download
 - Memory available for DNS records processing
 - Internet connection for fetching domain lists
@@ -652,7 +523,13 @@ The script requires configuration of the following variables:
 
 #### Important Notes  
 - Use caution when adding large domain lists (beyond a few hundred domains)
-- The script enforces a configurable entry limit (default: 5000) to prevent memory exhaustion
+- The script rejects lists above the configured entry limit (default: 5000) before changing existing entries.
+- `/tool fetch output=user` has a 64 KB data limit. The updater rejects responses at or above 64512 bytes; split larger feeds into separately managed lists.
+- Download and validation happen before changes. Missing entries are added first; stale managed entries are removed only after all additions succeed.
+- `fwdto="localhost"` is the retained example value. Set it to a reachable DNS server or a configured RouterOS DNS forwarder and verify resolution before scheduling the script.
+- Import the updater as a named system script; its job guard prevents overlapping executions of that script. Keep each managed list assigned to one script.
+- An addition failure retains old entries but can leave earlier additions in place. The RouterOS update is not transactional; back up the configuration before the first run.
+- Validate the revised updater on your RouterOS version before production use; its RouterOS commands are not executed by the Linux test suite.
 - The script adds a 10ms delay between operations to prevent resource exhaustion
 - TLS certificate verification is enabled (`check-certificate=yes`)
 - Monitor system resources during initial setup with large lists
@@ -697,5 +574,5 @@ If you want to say thanks financially, you can send a small token of appreciatio
 <div align="center">
 Made for the Mikrotik community
 
-[Report Bug](https://github.com/smkrv/mikrotik-domain-filter-script/issues) · [Request Feature](https://github.com/smkrv/mikrotik-domain-filter-script/issues)
+[Report Bug](https://github.com/smkrv/mikrotik-domain-filter-script/issues) | [Request Feature](https://github.com/smkrv/mikrotik-domain-filter-script/issues)
 </div>

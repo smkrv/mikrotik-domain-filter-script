@@ -17,7 +17,8 @@ setup() {
 
     run check_intersections "$main" "$special"
     [ "$status" -eq 0 ]
-    ! grep -Fxq "example.com" "$main"
+    run grep -Fxq "example.com" "$main"
+    [ "$status" -eq 1 ]
     grep -Fxq "myexample.com" "$main"
     grep -Fxq "sub-example.com" "$main"
 }

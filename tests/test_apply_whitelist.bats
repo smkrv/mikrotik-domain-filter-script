@@ -17,7 +17,8 @@ setup() {
 
     run apply_whitelist "$input" "$whitelist" "$result_file"
     [ "$status" -eq 0 ]
-    ! grep -Fxq "a.b.c.example.com" "$result_file"
+    run grep -Fxq "a.b.c.example.com" "$result_file"
+    [ "$status" -eq 1 ]
     grep -Fxq "other.com" "$result_file"
 }
 
@@ -31,7 +32,8 @@ setup() {
 
     run apply_whitelist "$input" "$whitelist" "$result_file"
     [ "$status" -eq 0 ]
-    ! grep -Fxq "a.b.example.com" "$result_file"
+    run grep -Fxq "a.b.example.com" "$result_file"
+    [ "$status" -eq 1 ]
     grep -Fxq "other.com" "$result_file"
 }
 
@@ -45,8 +47,10 @@ setup() {
 
     run apply_whitelist "$input" "$whitelist" "$result_file"
     [ "$status" -eq 0 ]
-    ! grep -Fxq "example.com" "$result_file"
-    ! grep -Fxq "sub.example.com" "$result_file"
+    run grep -Fxq "example.com" "$result_file"
+    [ "$status" -eq 1 ]
+    run grep -Fxq "sub.example.com" "$result_file"
+    [ "$status" -eq 1 ]
     grep -Fxq "other.org" "$result_file"
 }
 

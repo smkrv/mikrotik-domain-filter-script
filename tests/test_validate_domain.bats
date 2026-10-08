@@ -82,3 +82,14 @@ setup() {
     run validate_domain "../../etc/passwd"
     [ "$status" -eq 1 ]
 }
+
+@test "validate_domain: punycode TLD accepted" {
+    run validate_domain example.xn--p1ai
+    [ "$status" -eq 0 ]
+}
+@test "validate_domain: label longer than 63 rejected" {
+    local label
+    printf -v label '%064d' 0
+    run validate_domain "${label}.com"
+    [ "$status" -eq 1 ]
+}

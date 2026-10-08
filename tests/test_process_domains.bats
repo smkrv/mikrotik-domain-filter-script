@@ -36,7 +36,8 @@ setup() {
 
     grep -Fxq "example.com" "${output_dir}/second.txt"
     # api.example.com should NOT appear in other.txt (parent suppresses it)
-    ! grep -Fxq "api.example.com" "${output_dir}/other.txt" 2>/dev/null
+    run grep -Fxq "api.example.com" "${output_dir}/other.txt" 2>/dev/null
+    [ "$status" -eq 1 ]
 }
 
 @test "process_domains: regional domain classified correctly" {
@@ -58,4 +59,14 @@ setup() {
 
     run process_domains "$input" "$output_dir"
     [ "$status" -eq 1 ]
+}
+
+@test "process_domains: preserves every label before whitelist" {
+    printf 'a.b.c.example.com\nother.com\n' > "$TMP_DIR/deep"
+    printf 'a.b.c.example.com\n' > "$TMP_DIR/whitelist"
+    process_domains "$TMP_DIR/deep" "$TMP_DIR/classified"
+    grep -Fxq a.b.c.example.com "$TMP_DIR/classified/other.txt"
+    prepare_domains_for_dns_check "$TMP_DIR/classified" "$TMP_DIR/prepared"
+    apply_whitelist "$TMP_DIR/prepared" "$TMP_DIR/whitelist" "$TMP_DIR/result"
+    [ "$(cat "$TMP_DIR/result")" = other.com ]
 }

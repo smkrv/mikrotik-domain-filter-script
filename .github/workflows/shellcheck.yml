@@ -1,74 +1,31 @@
-name: ShellCheck
+name: Checks
 
 permissions:
   contents: read
 
-# No paths filter: the repo is small and a filter would let Makefile,
-# workflow, and config changes land without any CI run
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
 jobs:
-  shellcheck:
-    name: ShellCheck
+  checks:
+    name: Syntax, dependencies, lint and tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Install ShellCheck
+      - name: Install check dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck
+          sudo apt-get install -y bats shellcheck curl jq util-linux coreutils gawk
 
-      - name: Run ShellCheck on bin/
-        run: |
-          shellcheck --severity=warning --shell=bash bin/mikrotik-domain-filter
-
-      - name: Run ShellCheck on .sh files
-        run: |
-          shopt -s nullglob
-          files=$(find . -type f -name "*.sh" ! -path "./.git/*")
-          if [ -n "$files" ]; then
-            shellcheck --severity=warning --shell=bash $files
-          fi
-
-  syntax-check:
-    name: Bash Syntax Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Check bash syntax
-        run: bash -n bin/mikrotik-domain-filter
-
-  makefile-test:
-    name: Makefile Test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Test make targets
+      - name: Run repository checks
         run: |
           make check
-          make deps || true  # May fail if flock not installed
-
-  bats-test:
-    name: Bats Unit Tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Install bats-core
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bats
-
-      - name: Run bats tests
-        run: bats tests/
+          make deps
+          make lint
+          make test

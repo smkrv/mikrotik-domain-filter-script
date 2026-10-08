@@ -57,3 +57,12 @@ setup() {
     run initial_filter "$input" "$result_file"
     [ "$status" -eq 1 ]
 }
+
+@test "initial_filter: punycode accepted and overlong label rejected" {
+    local label
+    printf -v label '%064d' 0
+    printf 'example.xn--p1ai\n%s.com\n' "$label" > "$TMP_DIR/idn"
+    run initial_filter "$TMP_DIR/idn" "$TMP_DIR/result"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$TMP_DIR/result")" = example.xn--p1ai ]
+}
