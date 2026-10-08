@@ -106,7 +106,7 @@ Typical uses on the RouterOS side:
 
 - **Domain Validation**: Each remaining domain is queried via Cloudflare DoH. `NOERROR` keeps the domain, including names without an A record that are used as suffixes. `NXDOMAIN` excludes it. Transient transport failures, HTTP errors and other DNS errors are never cached as invalid; an excessive share makes the update inconclusive.
 - **Parallel Processing**: DNS checks use up to 5 workers by default, capped at 64; a free worker takes the next domain. Positive results are cached for 90 days; `NXDOMAIN` results expire after 1 day. Configure these separately with `CACHE_TTL_DAYS` and `CACHE_INVALID_TTL_DAYS`.
-- **Transient Failures**: Transient DNS failures are not cached. If they affect no more than `DNS_MAX_FAILURE_PERCENT` (default: 5%) of the domains, those domains are skipped and retried on the next run, even if the source checksums are unchanged. A pending retry marker is cleared only after both lists finish without transient failures and publication succeeds. The percentage is evaluated separately for each list. A larger share makes the DNS check inconclusive, aborts the update, and preserves the existing output.
+- **Transient Failures**: Transient DNS failures are not cached. If they affect no more than `DNS_MAX_FAILURE_PERCENT` (default: 5%) of the domains, those domains are skipped and retried on the next run, even if the source checksums are unchanged. A pending retry marker is cleared only after both lists finish without transient failures and publication succeeds. A persistent SERVFAIL keeps the marker set: each scheduled run processes both lists and attempts publication again, including Gist PATCH requests when enabled. Cached DNS results are reused. The percentage is evaluated separately for each list. A larger share makes the DNS check inconclusive, aborts the update, and preserves the existing output.
 - **DNS Resolution Method**: Verification uses Cloudflare's DNS-over-HTTPS (DoH) [service](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/): queries travel over an encrypted channel and return JSON that the script parses with `jq`.
 
 **Endpoint**: `https://cloudflare-dns.com/dns-query`  
@@ -397,7 +397,7 @@ Before running the script, ensure your system meets the requirements in [docs/RE
 **Quick Dependencies Installation (Ubuntu/Debian):**
 ```bash
 sudo apt-get update
-sudo apt-get install curl jq gawk grep util-linux
+sudo apt-get install curl jq gawk grep util-linux procps
 ```
 
 #### Installation Options

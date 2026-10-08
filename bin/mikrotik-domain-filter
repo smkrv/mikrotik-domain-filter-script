@@ -35,7 +35,7 @@ if [[ -n "$INSTALL_VERSION" ]]; then
 elif [[ -f "${REPO_DIR}/VERSION" ]]; then
     VERSION="$(tr -d '[:space:]' < "${REPO_DIR}/VERSION")"
 else
-    VERSION="2.2.1"  # Fallback version
+    VERSION="2.2.2"  # Fallback version
 fi
 readonly VERSION
 
@@ -132,7 +132,7 @@ if [[ -n "${MAX_PARALLEL_JOBS:-}" ]] && (( MAX_PARALLEL_JOBS > 64 )); then
 fi
 for _env_var in GIST_ID_MAIN GIST_ID_SPECIAL; do
     if [[ -n "${!_env_var:-}" && ! "${!_env_var}" =~ ^[a-fA-F0-9]{20,32}$ ]]; then
-        echo "WARNING: Invalid format for $_env_var, ignoring" >&2
+        echo "WARNING: Invalid format for $_env_var; Gist export will fail if enabled" >&2
         GIST_CONFIG_INVALID=true
         unset "$_env_var"
     fi
