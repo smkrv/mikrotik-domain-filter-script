@@ -76,7 +76,7 @@ check:
 deps:
 	@echo "$(CYAN)Checking dependencies...$(RESET)"
 	@missing=0; \
-	for dep in curl jq awk grep sort flock find md5sum comm; do \
+	for dep in curl jq awk grep sort flock find md5sum comm ps; do \
 		command -v $$dep >/dev/null 2>&1 || { echo "$(RED)$$dep not found$(RESET)"; missing=1; }; \
 	done; \
 	[ $$missing -eq 0 ] || exit 1

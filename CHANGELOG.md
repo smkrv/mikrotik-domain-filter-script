@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Tolerate transient DNS failures below a configurable percentage while keeping them uncached; preserve existing output when failures exceed the threshold.
+- Allow Gist exports to update either configured list independently and skip lists without an ID.
+- Use a temporary test root in install tests so they run with Bats 1.2.1.
+
+### Changed
+
+- Cap DNS workers at 64, rotate oversized `script.log` to `script.log.1`, and check for the `ps` dependency.
+- Document transient DNS handling, optional Gist IDs, worker limits, and log rotation.
+
 ## [2.2.1] - 2026-10-08
 
 ### Fixed
